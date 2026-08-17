@@ -218,6 +218,7 @@ function KakeiboApp() {
   const [fAmount, setFAmount] = useState("");
   const [fTags, setFTags] = useState([]);
   const [fTagInput, setFTagInput] = useState("");
+  const [fNote, setFNote] = useState("");
   const [fError, setFError] = useState("");
   const [catDeleteId, setCatDeleteId] = useState(null);
 
@@ -408,14 +409,15 @@ function KakeiboApp() {
 
   function openCatAdd() {
     setCatMode("add"); setCatEditId(null);
-    setFName(""); setFNameChoice(""); setFGroup(GROUP_ORDER[0]); setFAmount(""); setFTags([]); setFTagInput(""); setFError("");
+    setFName(""); setFNameChoice(""); setFGroup(GROUP_ORDER[0]); setFAmount(""); setFTags([]); setFTagInput("");
+    setFNote(""); setFError("");
     setCatFormOpen(true);
   }
   function openCatEdit(cat) {
     setCatMode("edit"); setCatEditId(cat.id);
     setFName(cat.name); setFNameChoice(CUSTOM_NAME); setFGroup(cat.group);
     setFAmount(String(cat.group === "予定費" ? cat.annualBudget || "" : cat.monthlyBudget || ""));
-    setFTags([...cat.tags]); setFTagInput(""); setFError("");
+    setFTags([...cat.tags]); setFTagInput(""); setFNote(cat.note || ""); setFError("");
     setCatFormOpen(true);
   }
   function pickGroup(g) {
@@ -444,7 +446,7 @@ function KakeiboApp() {
         id: KakeiboAPI.newId("c_"), name, group: fGroup,
         monthlyBudget: fGroup === "予定費" ? 0 : amount,
         annualBudget: fGroup === "予定費" ? amount : 0,
-        tags: [...fTags], note: "",
+        tags: [...fTags], note: fNote.trim(),
       };
       setCategories((p) => [...p, created]);
       saveCategory(created);
@@ -454,7 +456,7 @@ function KakeiboApp() {
         ...base, name, group: fGroup,
         monthlyBudget: fGroup === "予定費" ? 0 : amount,
         annualBudget: fGroup === "予定費" ? amount : 0,
-        tags: [...fTags],
+        tags: [...fTags], note: fNote.trim(),
       };
       setCategories((p) => p.map((c) => (c.id === catEditId ? updated : c)));
       saveCategory(updated);
@@ -831,9 +833,12 @@ function KakeiboApp() {
                           <div className="kb-rowmain">
                             <div className="kb-rowtitle">{c.name}</div>
                             <div className="kb-rowsub">
-                              {c.tags.length > 0
-                                ? c.tags.join("・")
-                                : `${c.group === "予定費" ? "年間" : "月"}予算 ${yen(c.group === "予定費" ? c.annualBudget : c.monthlyBudget)}`}
+                              {[
+                                c.tags.length > 0
+                                  ? c.tags.join("・")
+                                  : `${c.group === "予定費" ? "年間" : "月"}予算 ${yen(c.group === "予定費" ? c.annualBudget : c.monthlyBudget)}`,
+                                c.note,
+                              ].filter(Boolean).join("　")}
                             </div>
                           </div>
                           <ChevronRight size={17} className="kb-chev" />
@@ -1088,6 +1093,7 @@ function KakeiboApp() {
                                   <span style={{ width: `${pct}%`, background: over ? "var(--red)" : color }} />
                                 </div>
                               )}
+                              {cat.note && <div className="kb-rowsub">{cat.note}</div>}
                             </div>
                             <div className="kb-ana-vals">
                               <div className="kb-ana-spent" style={{ color: over ? "var(--red)" : "var(--ink)" }}>{yen(spent)}</div>
@@ -1516,6 +1522,10 @@ function KakeiboApp() {
                       <button className="kb-btn ghost" style={{ width: "auto", padding: "0 16px" }} onClick={addTag}>追加</button>
                     </div>
                   </div>
+                  <div className="kb-field">
+                    <label className="kb-label">補足（任意・一覧に表示されます）</label>
+                    <input className="kb-input" value={fNote} onChange={(ev) => setFNote(ev.target.value)} placeholder="2026/6〜開始" />
+                  </div>
                   {fError && <div className="kb-err">{fError}</div>}
                   <button className="kb-btn" onClick={submitCat}>{catMode === "add" ? "追加する" : "保存する"}</button>
                   <div className="kb-btn-row" style={{ marginTop: 9 }}>
@@ -1536,6 +1546,7 @@ function KakeiboApp() {
                               <div className="kb-rowsub">
                                 {c.group === "予定費" ? "年間" : "月"}予算 {yen(c.group === "予定費" ? c.annualBudget : c.monthlyBudget)}
                                 {c.tags.length > 0 ? `・内訳${c.tags.length}件` : ""}
+                                {c.note ? `　${c.note}` : ""}
                               </div>
                             </div>
                             <div className="kb-rowright">
