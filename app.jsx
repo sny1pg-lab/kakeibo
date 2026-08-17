@@ -27,7 +27,7 @@ const NAME_OPTIONS = {
 };
 const CUSTOM_NAME = "__custom__";
 const DEFAULT_TAGS = {
-  自由費: ["交通費", "服飾雑貨", "美容コスメ", "外食", "その他"],
+  自由費: ["交通費", "服飾雑貨", "美容コスメ", "外食", "その他", "収入"],
 };
 
 /* ------------------------------------------------------------------ */
@@ -60,6 +60,20 @@ const Settings = (p) => <Svg {...p}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2
 const CalendarPlus = (p) => <Svg {...p}><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="M10 16h4" /><path d="M12 14v4" /></Svg>;
 const ArrowLeftRight = (p) => <Svg {...p}><path d="m16 3 4 4-4 4" /><path d="M20 7H4" /><path d="m8 21-4-4 4-4" /><path d="M4 17h16" /></Svg>;
 const CircleAlert = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></Svg>;
+
+/** 明細の並び順を入れ替えるボタン。 */
+function SortButton({ asc, onToggle }) {
+  return (
+    <button type="button" className="kb-sortbtn" onClick={onToggle}>
+      <Svg size={13}>
+        {asc ? <path d="m3 8 4-4 4 4" /> : <path d="m3 4 4 4 4-4" />}
+        <path d="M7 4v10" />
+        <path d="M12 18h9" /><path d="M12 13h6" /><path d="M12 8h3" />
+      </Svg>
+      {asc ? "古い順" : "新しい順"}
+    </button>
+  );
+}
 
 /** 「金額が確定している」のような入り切りの行。 */
 function CheckRow({ checked, onChange, children }) {
@@ -177,6 +191,7 @@ function KakeiboApp() {
   const [anaMonth, setAnaMonth] = useState(realMonthIdx);
   const [histMonth, setHistMonth] = useState(null);
   const [histCat, setHistCat] = useState(null);   // null=すべて / カテゴリid / "transfer"
+  const [sortAsc, setSortAsc] = useState(false); // false=新しい順 / true=古い順
   const [tkMonth, setTkMonth] = useState(null);  // 立替タブの月絞り込み。null=年間
   const [detail, setDetail] = useState(null);
   const [dMonth, setDMonth] = useState(null);
@@ -555,14 +570,13 @@ function KakeiboApp() {
     });
     yearTransfers.forEach((t) => rows.push({ ...t, kind: "transfer" }));
     rows.sort((a, b) => {
-      const ma = monthIdxOf(a.date), mb = monthIdxOf(b.date);
-      if (ma !== mb) return mb - ma;
-      const da = dayOf(a.date), db = dayOf(b.date);
-      if (da !== db) return db - da;
-      return String(a.id).localeCompare(String(b.id));
+      const d = a.date === b.date
+        ? String(a.id).localeCompare(String(b.id))
+        : a.date.localeCompare(b.date);
+      return sortAsc ? d : -d;
     });
     return rows;
-  }, [yearEntries, yearTransfers, categories, catIndex]);
+  }, [yearEntries, yearTransfers, categories, catIndex, sortAsc]);
 
   /* ---- 未確定（Excelで金額をオレンジにしていたもの） ---- */
 
@@ -696,10 +710,11 @@ function KakeiboApp() {
     if (dTag && e.tag !== dTag) return false;
     return true;
   }).sort((a, b) => {
-    const ma = monthIdxOf(a.date), mb = monthIdxOf(b.date);
-    if (ma !== mb) return ma - mb;
-    return dayOf(a.date) - dayOf(b.date);
-  }), [dAllEntries, anaScope, anaMonth, dMonth, dTag]);
+    const d = a.date === b.date
+      ? String(a.id).localeCompare(String(b.id))
+      : a.date.localeCompare(b.date);
+    return sortAsc ? d : -d;
+  }), [dAllEntries, anaScope, anaMonth, dMonth, dTag, sortAsc]);
 
   const dTotal = dEntries.reduce((a, e) => a + signedAmount(e), 0);
   const dMonthTotals = useMemo(() => {
@@ -956,7 +971,10 @@ function KakeiboApp() {
               <>
               <div className="kb-detail-total" style={{ paddingTop: 8 }}>
                 <span>{histMonth === null ? "年間" : MONTH_LABELS[histMonth]}の支出 {yen(histTotal)}</span>
-                <span className="kb-detail-count">{histRows.length}件</span>
+                <div className="kb-sortwrap">
+                  <span className="kb-detail-count">{histRows.length}件</span>
+                  <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+                </div>
               </div>
 
               {historyByDate.length === 0 ? (
@@ -1236,7 +1254,10 @@ function KakeiboApp() {
 
                   <div className="kb-detail-total">
                     <span>合計 {yen(dTotal)}</span>
-                    <span className="kb-detail-count">{dEntries.length}件</span>
+                    <div className="kb-sortwrap">
+                      <span className="kb-detail-count">{dEntries.length}件</span>
+                      <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+                    </div>
                   </div>
 
                   {dEntries.length === 0 ? (

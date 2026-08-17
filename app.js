@@ -13,7 +13,7 @@
   };
   var CUSTOM_NAME = "__custom__";
   var DEFAULT_TAGS = {
-    \u81EA\u7531\u8CBB: ["\u4EA4\u901A\u8CBB", "\u670D\u98FE\u96D1\u8CA8", "\u7F8E\u5BB9\u30B3\u30B9\u30E1", "\u5916\u98DF", "\u305D\u306E\u4ED6"]
+    \u81EA\u7531\u8CBB: ["\u4EA4\u901A\u8CBB", "\u670D\u98FE\u96D1\u8CA8", "\u7F8E\u5BB9\u30B3\u30B9\u30E1", "\u5916\u98DF", "\u305D\u306E\u4ED6", "\u53CE\u5165"]
   };
   function Svg({ size = 24, children, className, style }) {
     return /* @__PURE__ */ React.createElement(
@@ -52,6 +52,9 @@
   var CalendarPlus = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M8 2v4" }), /* @__PURE__ */ React.createElement("path", { d: "M16 2v4" }), /* @__PURE__ */ React.createElement("rect", { width: "18", height: "18", x: "3", y: "4", rx: "2" }), /* @__PURE__ */ React.createElement("path", { d: "M3 10h18" }), /* @__PURE__ */ React.createElement("path", { d: "M10 16h4" }), /* @__PURE__ */ React.createElement("path", { d: "M12 14v4" }));
   var ArrowLeftRight = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "m16 3 4 4-4 4" }), /* @__PURE__ */ React.createElement("path", { d: "M20 7H4" }), /* @__PURE__ */ React.createElement("path", { d: "m8 21-4-4 4-4" }), /* @__PURE__ */ React.createElement("path", { d: "M4 17h16" }));
   var CircleAlert = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "10" }), /* @__PURE__ */ React.createElement("path", { d: "M12 8v4" }), /* @__PURE__ */ React.createElement("path", { d: "M12 16h.01" }));
+  function SortButton({ asc, onToggle }) {
+    return /* @__PURE__ */ React.createElement("button", { type: "button", className: "kb-sortbtn", onClick: onToggle }, /* @__PURE__ */ React.createElement(Svg, { size: 13 }, asc ? /* @__PURE__ */ React.createElement("path", { d: "m3 8 4-4 4 4" }) : /* @__PURE__ */ React.createElement("path", { d: "m3 4 4 4 4-4" }), /* @__PURE__ */ React.createElement("path", { d: "M7 4v10" }), /* @__PURE__ */ React.createElement("path", { d: "M12 18h9" }), /* @__PURE__ */ React.createElement("path", { d: "M12 13h6" }), /* @__PURE__ */ React.createElement("path", { d: "M12 8h3" })), asc ? "\u53E4\u3044\u9806" : "\u65B0\u3057\u3044\u9806");
+  }
   function CheckRow({ checked, onChange, children }) {
     return /* @__PURE__ */ React.createElement("button", { type: "button", className: `kb-check ${checked ? "on" : ""}`, onClick: () => onChange(!checked) }, /* @__PURE__ */ React.createElement("span", { className: "kb-check-box" }, checked && /* @__PURE__ */ React.createElement(Check, { size: 13 })), /* @__PURE__ */ React.createElement("span", null, children));
   }
@@ -67,9 +70,6 @@
   function monthIdxOf(dateStr) {
     const m = Number(String(dateStr || "").slice(5, 7));
     return m >= 1 && m <= 12 ? m - 1 : 0;
-  }
-  function dayOf(dateStr) {
-    return Number(String(dateStr || "").slice(8, 10)) || 0;
   }
   function weekday(dateStr) {
     const d = /* @__PURE__ */ new Date(`${dateStr}T00:00:00`);
@@ -130,6 +130,7 @@
     const [anaMonth, setAnaMonth] = useState(realMonthIdx);
     const [histMonth, setHistMonth] = useState(null);
     const [histCat, setHistCat] = useState(null);
+    const [sortAsc, setSortAsc] = useState(false);
     const [tkMonth, setTkMonth] = useState(null);
     const [detail, setDetail] = useState(null);
     const [dMonth, setDMonth] = useState(null);
@@ -591,14 +592,11 @@
       });
       yearTransfers.forEach((t) => rows.push({ ...t, kind: "transfer" }));
       rows.sort((a, b) => {
-        const ma = monthIdxOf(a.date), mb = monthIdxOf(b.date);
-        if (ma !== mb) return mb - ma;
-        const da = dayOf(a.date), db = dayOf(b.date);
-        if (da !== db) return db - da;
-        return String(a.id).localeCompare(String(b.id));
+        const d = a.date === b.date ? String(a.id).localeCompare(String(b.id)) : a.date.localeCompare(b.date);
+        return sortAsc ? d : -d;
       });
       return rows;
-    }, [yearEntries, yearTransfers, categories, catIndex]);
+    }, [yearEntries, yearTransfers, categories, catIndex, sortAsc]);
     const pendingRows = useMemo(() => {
       const rows = [];
       yearEntries.forEach((e) => {
@@ -716,10 +714,9 @@
       if (dTag && e.tag !== dTag) return false;
       return true;
     }).sort((a, b) => {
-      const ma = monthIdxOf(a.date), mb = monthIdxOf(b.date);
-      if (ma !== mb) return ma - mb;
-      return dayOf(a.date) - dayOf(b.date);
-    }), [dAllEntries, anaScope, anaMonth, dMonth, dTag]);
+      const d = a.date === b.date ? String(a.id).localeCompare(String(b.id)) : a.date.localeCompare(b.date);
+      return sortAsc ? d : -d;
+    }), [dAllEntries, anaScope, anaMonth, dMonth, dTag, sortAsc]);
     const dTotal = dEntries.reduce((a, e) => a + signedAmount(e), 0);
     const dMonthTotals = useMemo(() => {
       const arr = Array(12).fill(0);
@@ -823,7 +820,7 @@
       },
       /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, r.memo || r.tag || r.catName || "\uFF08\u5185\u5BB9\u306A\u3057\uFF09"),
       /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, r.kind === "transfer" ? `\u632F\u66FF\u30FB${r.from} \u2192 ${r.to}` : r.kind === "settlement" ? `\u7ACB\u66FF\u30FB${r.party}` : [isIncome(r) ? "\u53CE\u5165" : null, r.catName, r.tag, r.method].filter(Boolean).join("\u30FB"))
-    ), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: { color: "var(--pending)" } }, isIncome(r) ? "+" : "", yen(r.amount)), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn confirm", onClick: () => confirmPending(r), "aria-label": "\u91D1\u984D\u3092\u78BA\u5B9A\u3059\u308B" }, /* @__PURE__ */ React.createElement(Check, { size: 16 }))))), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub", style: { padding: "10px 4px 0", whiteSpace: "normal" } }, "\u30AB\u30FC\u30C9\u306E\u660E\u7D30\u306B\u8F09\u3063\u305F\u3082\u306E\u304B\u3089\u30C1\u30A7\u30C3\u30AF\u3092\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u62BC\u3059\u3068\u78BA\u5B9A\u306B\u306A\u308A\u3001\u3053\u306E\u4E00\u89A7\u304B\u3089\u6D88\u3048\u307E\u3059\u3002"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total", style: { paddingTop: 8 } }, /* @__PURE__ */ React.createElement("span", null, histMonth === null ? "\u5E74\u9593" : MONTH_LABELS[histMonth], "\u306E\u652F\u51FA ", yen(histTotal)), /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, histRows.length, "\u4EF6")), historyByDate.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, histMonth === null ? "\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093" : `${MONTH_LABELS[histMonth]}\u306E\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093`), histMonth === null ? "\u8A18\u9332\u30BF\u30D6\u304B\u3089\u30AB\u30C6\u30B4\u30EA\u3092\u9078\u3093\u3067\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002" : "\u4E0A\u306E\u5E74\u9593\u3092\u62BC\u3059\u3068\u5168\u671F\u9593\u306B\u623B\u308A\u307E\u3059\u3002")) : historyByDate.map((day) => {
+    ), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: { color: "var(--pending)" } }, isIncome(r) ? "+" : "", yen(r.amount)), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn confirm", onClick: () => confirmPending(r), "aria-label": "\u91D1\u984D\u3092\u78BA\u5B9A\u3059\u308B" }, /* @__PURE__ */ React.createElement(Check, { size: 16 }))))), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub", style: { padding: "10px 4px 0", whiteSpace: "normal" } }, "\u30AB\u30FC\u30C9\u306E\u660E\u7D30\u306B\u8F09\u3063\u305F\u3082\u306E\u304B\u3089\u30C1\u30A7\u30C3\u30AF\u3092\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u62BC\u3059\u3068\u78BA\u5B9A\u306B\u306A\u308A\u3001\u3053\u306E\u4E00\u89A7\u304B\u3089\u6D88\u3048\u307E\u3059\u3002"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total", style: { paddingTop: 8 } }, /* @__PURE__ */ React.createElement("span", null, histMonth === null ? "\u5E74\u9593" : MONTH_LABELS[histMonth], "\u306E\u652F\u51FA ", yen(histTotal)), /* @__PURE__ */ React.createElement("div", { className: "kb-sortwrap" }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, histRows.length, "\u4EF6"), /* @__PURE__ */ React.createElement(SortButton, { asc: sortAsc, onToggle: () => setSortAsc((v) => !v) }))), historyByDate.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, histMonth === null ? "\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093" : `${MONTH_LABELS[histMonth]}\u306E\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093`), histMonth === null ? "\u8A18\u9332\u30BF\u30D6\u304B\u3089\u30AB\u30C6\u30B4\u30EA\u3092\u9078\u3093\u3067\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002" : "\u4E0A\u306E\u5E74\u9593\u3092\u62BC\u3059\u3068\u5168\u671F\u9593\u306B\u623B\u308A\u307E\u3059\u3002")) : historyByDate.map((day) => {
       const dayTotal = day.rows.filter((e) => e.kind !== "transfer").reduce((s, e) => s + signedAmount(e), 0);
       return /* @__PURE__ */ React.createElement("div", { key: day.date }, /* @__PURE__ */ React.createElement("div", { className: "kb-datehead" }, /* @__PURE__ */ React.createElement("span", { className: "d" }, Number(day.date.slice(5, 7)), "/", Number(day.date.slice(8, 10)), "\uFF08", weekday(day.date), "\uFF09"), /* @__PURE__ */ React.createElement("span", { className: "t" }, "\u652F\u51FA ", yen(dayTotal))), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, day.rows.map((e) => e.kind === "transfer" ? /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => openTrEdit(e) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: "#AEB4BC" } }, /* @__PURE__ */ React.createElement(ArrowLeftRight, { size: 15 })), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, e.memo || "\u632F\u66FF"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, "\u632F\u66FF\u30FB", e.from, " \u2192 ", e.to)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: { color: e.pending ? "var(--pending)" : "var(--sub)" } }, yen(e.amount)), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })) : /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => openEntryEdit(catById(e.catId), e) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: e.color } }, e.catName.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, e.memo || e.tag || e.catName), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, [e.pending ? "\u672A\u78BA\u5B9A" : null, isIncome(e) ? "\u53CE\u5165" : null, e.catName, e.tag, e.method].filter(Boolean).join("\u30FB"))), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: amountStyle(e) }, isIncome(e) ? "+" : "", yen(Math.abs(Number(e.amount) || 0))), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })))));
     }))) : tab === "analysis" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-seg", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("button", { className: anaScope === "month" ? "on" : "", onClick: () => setAnaScope("month") }, "\u6708\u5225"), /* @__PURE__ */ React.createElement("button", { className: anaScope === "year" ? "on" : "", onClick: () => setAnaScope("year") }, "\u5E74\u5225")), anaScope === "month" && /* @__PURE__ */ React.createElement("div", { className: "kb-monthbar" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setAnaMonth((m) => (m + 11) % 12), "aria-label": "\u524D\u306E\u6708" }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 17 })), /* @__PURE__ */ React.createElement("span", null, year, "\u5E74 ", MONTH_LABELS[anaMonth]), /* @__PURE__ */ React.createElement("button", { onClick: () => setAnaMonth((m) => (m + 1) % 12), "aria-label": "\u6B21\u306E\u6708" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 17 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-total-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-total-row" }, /* @__PURE__ */ React.createElement("span", { className: "kb-total-label" }, "\u4E88\u7B97 ", yen(anaTotal.budget)), /* @__PURE__ */ React.createElement("span", { className: "kb-total-label" }, anaTotal.spent > anaTotal.budget ? "\u8D85\u904E" : "\u6B8B", " ", yen(Math.abs(anaTotal.budget - anaTotal.spent)))), /* @__PURE__ */ React.createElement("div", { className: "kb-total-row", style: { marginTop: 6 } }, /* @__PURE__ */ React.createElement("span", { className: "kb-total-big", style: { color: anaTotal.spent > anaTotal.budget ? "var(--red)" : "var(--ink)" } }, yen(anaTotal.spent))), /* @__PURE__ */ React.createElement("div", { className: "kb-bar" }, /* @__PURE__ */ React.createElement("span", { style: {
@@ -866,7 +863,7 @@
     )))), dTagOptions.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-label", style: { marginTop: 12 } }, "\u5185\u8A33\u3092\u30BF\u30C3\u30D7\u3067\u7D5E\u308A\u8FBC\u307F"), /* @__PURE__ */ React.createElement("div", { className: "kb-chips" }, /* @__PURE__ */ React.createElement("button", { className: `kb-tagchip ${dTag === null ? "on" : ""}`, onClick: () => setDTag(null) }, "\u3059\u3079\u3066"), dTagOptions.map((t) => {
       const tot = dAllEntries.filter((e) => e.tag === t && (anaScope === "year" ? dMonth === null || monthIdxOf(e.date) === dMonth : monthIdxOf(e.date) === anaMonth)).reduce((a, e) => a + signedAmount(e), 0);
       return /* @__PURE__ */ React.createElement("button", { key: t, className: `kb-tagchip ${dTag === t ? "on" : ""} ${tot === 0 ? "empty" : ""}`, onClick: () => setDTag(dTag === t ? null : t) }, t, " ", tot === 0 ? "" : yen(tot));
-    }))), /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08 ", yen(dTotal)), /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, dEntries.length, "\u4EF6")), dEntries.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, "\u8A72\u5F53\u3059\u308B\u660E\u7D30\u304C\u3042\u308A\u307E\u305B\u3093") : /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, dEntries.map((e) => /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => {
+    }))), /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08 ", yen(dTotal)), /* @__PURE__ */ React.createElement("div", { className: "kb-sortwrap" }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, dEntries.length, "\u4EF6"), /* @__PURE__ */ React.createElement(SortButton, { asc: sortAsc, onToggle: () => setSortAsc((v) => !v) }))), dEntries.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, "\u8A72\u5F53\u3059\u308B\u660E\u7D30\u304C\u3042\u308A\u307E\u305B\u3093") : /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, dEntries.map((e) => /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => {
       const c = catById(e.catId);
       closeDetail();
       openEntryEdit(c, e);

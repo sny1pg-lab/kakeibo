@@ -206,3 +206,12 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 /* 分析タブのグループ見出し。記録タブと同じ並びに、そのグループの合計を添える */
 .kb-section-label.kb-grouphead { display: flex; align-items: baseline; justify-content: space-between; }
 .kb-section-label.kb-grouphead b { font-size: 12px; font-weight: 700; color: var(--ink); font-feature-settings: "tnum"; }
+
+/* 明細の並び替え */
+.kb-sortwrap { display: flex; align-items: center; gap: 10px; }
+.kb-sortbtn {
+  display: inline-flex; align-items: center; gap: 4px; font-family: inherit;
+  font-size: 11.5px; padding: 4px 10px; border-radius: 20px; cursor: pointer;
+  border: 1px solid var(--line); background: #fff; color: var(--sub);
+}
+.kb-sortbtn:active { background: var(--bg); }
