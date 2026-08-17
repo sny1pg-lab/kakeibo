@@ -1,0 +1,208 @@
+/* 参考実装の <style> ブロックをそのまま外出ししたもの。
+   末尾に、スプレッドシート同期の表示まわりだけ追加している。 */
+
+html, body { margin: 0; padding: 0; }
+body { background: #F2F3F5; }
+
+.kb {
+  --bg: #F2F3F5;
+  --card: #FFFFFF;
+  --line: #E8E9EC;
+  --ink: #1F2328;
+  --sub: #8A9099;
+  --accent: #2FA85A;
+  --red: #D94B45;
+  --pending: #E8890C;   /* 金額が未確定。Excelのオレンジにあたる */
+  font-family: 'Zen Kaku Gothic New', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  color: var(--ink);
+  padding-bottom: 78px;
+  box-sizing: border-box;
+  -webkit-text-size-adjust: 100%;
+}
+.kb *, .kb *::before, .kb *::after { box-sizing: border-box; }
+.kb-wrap { max-width: 480px; margin: 0 auto; }
+
+.kb-topbar { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 5; }
+.kb-title { font-size: 16px; font-weight: 700; }
+.kb-yearpick { display: flex; align-items: center; gap: 4px; }
+.kb-yearbtn { width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--sub); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.kb-yearbtn:hover { background: var(--bg); }
+.kb-yearlabel { font-size: 13px; font-weight: 700; min-width: 54px; text-align: center; font-feature-settings: "tnum"; }
+
+.kb-body { padding: 14px 12px 24px; }
+.kb-section-label { font-size: 11.5px; color: var(--sub); margin: 16px 4px 7px; }
+.kb-section-label:first-child { margin-top: 2px; }
+
+.kb-card { background: var(--card); border-radius: 12px; overflow: hidden; }
+.kb-card + .kb-card { margin-top: 10px; }
+
+.kb-row { display: flex; align-items: center; gap: 11px; padding: 13px 14px; border-bottom: 1px solid var(--line); cursor: pointer; background: transparent; border-left: none; border-right: none; border-top: none; width: 100%; text-align: left; font-family: inherit; color: inherit; }
+.kb-row:last-child { border-bottom: none; }
+.kb-row:active { background: #FAFAFB; }
+.kb-dot { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; }
+.kb-rowmain { flex: 1; min-width: 0; }
+.kb-rowtitle { font-size: 14.5px; font-weight: 500; }
+.kb-rowsub { font-size: 11px; color: var(--sub); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-rowright { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.kb-amount { font-size: 15px; font-weight: 700; font-feature-settings: "tnum"; }
+.kb-chev { color: #C4C8CE; flex-shrink: 0; }
+
+.kb-hint { display: flex; align-items: center; gap: 8px; padding: 13px 14px; background: #F0F8F2; color: #2E7D48; font-size: 12px; border-radius: 12px; margin-top: 10px; cursor: pointer; border: none; width: 100%; text-align: left; font-family: inherit; }
+
+.kb-empty { text-align: center; padding: 34px 16px; color: var(--sub); font-size: 13px; line-height: 1.8; }
+.kb-empty strong { display: block; color: var(--ink); font-size: 14.5px; margin-bottom: 5px; }
+
+.kb-sheet-backdrop { position: fixed; inset: 0; background: rgba(20,22,26,0.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; animation: kb-fade 0.15s ease; }
+.kb-sheet { background: var(--card); width: 100%; max-width: 480px; border-radius: 16px 16px 0 0; padding: 6px 16px 22px; max-height: 92vh; overflow-y: auto; animation: kb-up 0.22s cubic-bezier(0.2,0.8,0.2,1); padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
+.kb-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 0 12px; position: sticky; top: 0; background: var(--card); z-index: 1; }
+.kb-sheet-title { font-size: 15px; font-weight: 700; }
+.kb-close { background: transparent; border: none; color: var(--sub); cursor: pointer; padding: 4px; display: flex; }
+
+.kb-field { margin-bottom: 12px; }
+.kb-label { display: block; font-size: 11.5px; color: var(--sub); margin-bottom: 5px; }
+.kb-input { width: 100%; padding: 11px 12px; font-size: 15px; border: 1px solid var(--line); border-radius: 9px; background: #FAFAFB; color: var(--ink); font-family: inherit; }
+.kb-input:focus { outline: none; border-color: var(--accent); background: #fff; }
+select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--sub) 50%), linear-gradient(135deg, var(--sub) 50%, transparent 50%); background-position: calc(100% - 16px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px); background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.kb-input.amount { font-size: 20px; font-weight: 700; text-align: right; font-feature-settings: "tnum"; }
+.kb-inline { display: flex; gap: 9px; }
+.kb-err { font-size: 12px; color: var(--red); margin-bottom: 9px; }
+
+.kb-btn { width: 100%; padding: 13px; font-size: 15px; font-weight: 700; border: none; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; font-family: inherit; }
+.kb-btn:active { opacity: 0.85; }
+.kb-btn.ghost { background: var(--bg); color: var(--sub); font-weight: 500; }
+.kb-btn.danger { background: #FDF0EF; color: var(--red); font-weight: 500; }
+.kb-btn-row { display: flex; gap: 9px; margin-top: 4px; }
+
+.kb-seg { display: flex; background: var(--bg); border-radius: 9px; padding: 3px; }
+.kb-seg button { flex: 1; padding: 8px 4px; font-size: 13px; border: none; background: transparent; color: var(--sub); border-radius: 7px; cursor: pointer; font-family: inherit; }
+.kb-seg button.on { background: var(--card); color: var(--ink); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+.kb-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.kb-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; padding: 4px 7px 4px 10px; border-radius: 20px; background: var(--bg); color: var(--ink); }
+.kb-chip button { background: transparent; border: none; color: var(--sub); cursor: pointer; display: flex; padding: 0; }
+
+.kb-total-card { background: var(--card); border-radius: 12px; padding: 16px; }
+.kb-total-row { display: flex; justify-content: space-between; align-items: baseline; }
+.kb-total-label { font-size: 12px; color: var(--sub); }
+.kb-total-big { font-size: 24px; font-weight: 700; font-feature-settings: "tnum"; }
+.kb-bar { height: 7px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-top: 11px; }
+.kb-bar span { display: block; height: 100%; border-radius: 4px; transition: width 0.45s ease; }
+.kb-bar.thin { height: 5px; margin-top: 7px; }
+
+.kb-ana-vals { text-align: right; flex-shrink: 0; }
+.kb-ana-spent { font-size: 15px; font-weight: 700; font-feature-settings: "tnum"; }
+.kb-ana-rest { font-size: 10.5px; color: var(--sub); margin-top: 1px; font-feature-settings: "tnum"; }
+
+.kb-datehead { display: flex; align-items: center; justify-content: space-between; padding: 9px 4px 6px; }
+.kb-datehead .d { font-size: 12.5px; font-weight: 700; }
+.kb-datehead .t { font-size: 11.5px; color: var(--sub); font-feature-settings: "tnum"; }
+
+.kb-monthbar { display: flex; align-items: center; justify-content: space-between; background: var(--card); border-radius: 12px; padding: 8px 10px; margin-bottom: 10px; }
+.kb-monthbar button { border: none; background: transparent; color: var(--sub); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.kb-monthbar span { font-size: 14px; font-weight: 700; }
+
+.kb-nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); border-top: 1px solid var(--line); display: flex; z-index: 10; padding-bottom: env(safe-area-inset-bottom); }
+.kb-nav-inner { max-width: 480px; margin: 0 auto; display: flex; width: 100%; }
+.kb-nav button { flex: 1; border: none; background: transparent; padding: 9px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--sub); cursor: pointer; font-family: inherit; }
+.kb-nav button.on { color: var(--accent); }
+.kb-nav button span { font-size: 10.5px; }
+
+.kb-fab { position: fixed; right: 16px; bottom: 92px; width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px -4px rgba(47,168,90,0.55); cursor: pointer; z-index: 9; }
+.kb-fab:active { transform: scale(0.94); }
+
+.kb-toast { position: fixed; bottom: 88px; left: 50%; transform: translateX(-50%); background: rgba(31,35,40,0.94); color: #fff; font-size: 12.5px; padding: 9px 18px; border-radius: 22px; z-index: 30; animation: kb-fade 0.2s ease; max-width: 90vw; text-align: center; }
+
+.kb-loading { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--sub); font-size: 13px; padding: 60px 0; }
+.kb-spin { animation: kb-spin 0.9s linear infinite; }
+
+/* 精算済みは取り消し線を引かず、薄さだけで区別する */
+.kb-settled { opacity: 0.55; }
+.kb-iconbtn { background: transparent; border: none; color: var(--sub); cursor: pointer; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.kb-iconbtn:active { background: var(--bg); }
+
+.kb-sheet-period { font-size: 12px; color: var(--sub); font-weight: 400; }
+.kb-detail-total { display: flex; align-items: baseline; justify-content: space-between; padding: 13px 2px 8px; }
+.kb-detail-total span:first-child { font-size: 16px; font-weight: 700; font-feature-settings: "tnum"; }
+.kb-detail-count { font-size: 11.5px; color: var(--sub); }
+.kb-detail-date { font-size: 11px; color: var(--sub); width: 34px; flex-shrink: 0; font-feature-settings: "tnum"; }
+.kb-monthchips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.kb-histfilter { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 5px; }
+.kb-monthchip { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 2px; cursor: pointer; font-family: inherit; }
+.kb-monthchip span { display: block; font-size: 9.5px; color: var(--sub); }
+.kb-monthchip b { display: block; font-size: 10.5px; font-weight: 500; font-feature-settings: "tnum"; margin-top: 1px; }
+.kb-monthchip.empty b { color: #C4C8CE; }
+.kb-monthchip.on { border-color: var(--accent); background: #F0F8F2; }
+.kb-monthchip.on span, .kb-monthchip.on b { color: #2E7D48; }
+.kb-tagchip { font-size: 11.5px; padding: 6px 11px; border-radius: 20px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; font-family: inherit; }
+.kb-tagchip.empty { color: #B4B9C0; }
+.kb-tagchip.on { border-color: var(--accent); background: #F0F8F2; color: #2E7D48; font-weight: 700; }
+.kb-stackbar { position: relative; height: 6px; background: var(--bg); border-radius: 4px; margin-top: 7px; }
+.kb-stackbar span { position: absolute; left: 0; top: 0; height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+.kb-stackbar .all { background: #DCDFE4; }
+.kb-stackbar .un { background: var(--red); }
+.kb-warnbar { width: 100%; border: none; background: #FDF0EF; color: var(--red); font-family: inherit; font-size: 12px; padding: 11px 14px; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer; line-height: 1.5; }
+.kb-warnbar span:first-child { flex: 1; }
+.kb-warnbtn { flex-shrink: 0; border: 1px solid var(--red); border-radius: 20px; padding: 4px 11px; font-size: 11px; }
+.kb-savebox { font-size: 12px; padding: 11px 12px; border-radius: 9px; background: var(--bg); color: var(--sub); line-height: 1.6; }
+.kb-savebox.ok { background: #F0F8F2; color: #2E7D48; }
+.kb-savebox.error { background: #FDF0EF; color: var(--red); }
+.kb-btn:disabled { opacity: 0.45; cursor: default; }
+.kb-partytop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.kb-partyamt { font-size: 17px; font-weight: 700; font-feature-settings: "tnum"; }
+
+@keyframes kb-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes kb-up { from { transform: translateY(14px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
+@keyframes kb-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .kb-sheet, .kb-sheet-backdrop, .kb-toast, .kb-spin { animation: none !important; }
+}
+
+/* ---- ここから下はスプレッドシート同期のための追加分 ---- */
+
+.kb-syncbar { width: 100%; border: none; font-family: inherit; font-size: 12px; padding: 9px 14px; display: flex; align-items: center; gap: 9px; text-align: left; line-height: 1.5; cursor: default; }
+.kb-syncbar.pending { background: #FFF7E6; color: #8A6100; }
+.kb-syncbar.error { background: #FDF0EF; color: var(--red); cursor: pointer; }
+.kb-syncbar span:first-of-type { flex: 1; }
+.kb-syncbtn { flex-shrink: 0; border: 1px solid currentColor; border-radius: 20px; padding: 4px 11px; font-size: 11px; background: transparent; color: inherit; font-family: inherit; cursor: pointer; }
+
+.kb-setup { max-width: 480px; margin: 0 auto; padding: 40px 20px; font-family: 'Zen Kaku Gothic New', -apple-system, sans-serif; color: #1F2328; }
+.kb-setup h1 { font-size: 17px; margin: 0 0 6px; }
+.kb-setup p { font-size: 13px; color: #8A9099; line-height: 1.8; margin: 0 0 16px; }
+.kb-setup input { width: 100%; padding: 11px 12px; font-size: 14px; border: 1px solid #E8E9EC; border-radius: 9px; box-sizing: border-box; font-family: ui-monospace, Menlo, monospace; background: #fff; color: #1F2328; }
+.kb-setup button { width: 100%; margin-top: 12px; padding: 13px; font-size: 15px; font-weight: 700; border: none; border-radius: 10px; background: #2FA85A; color: #fff; font-family: inherit; cursor: pointer; }
+.kb-setup .kb-err { margin-top: 12px; }
+
+/* 金額が未確定の記録まわり */
+
+.kb-pendingchip {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 10px;
+  padding: 11px 12px; border-radius: 10px; cursor: pointer; font-family: inherit;
+  border: 1px solid #F2C98A; background: #FFF8EE; color: #8A5A00; font-size: 13px; text-align: left;
+}
+.kb-pendingchip span { flex: 1; }
+.kb-pendingchip b { font-size: 13px; font-feature-settings: "tnum"; }
+.kb-pendingchip.on { border-color: var(--pending); background: #FDEED8; }
+.kb-pendingchip.empty { border-color: var(--line); background: var(--card); color: var(--sub); }
+.kb-pendingchip.empty b { color: var(--sub); font-weight: 500; }
+
+.kb-iconbtn.confirm { border: 1px solid var(--pending); color: var(--pending); }
+.kb-iconbtn.confirm:active { background: #FDEED8; }
+
+.kb-check {
+  display: flex; align-items: center; gap: 9px; width: 100%; margin-bottom: 12px;
+  padding: 11px 12px; border-radius: 9px; cursor: pointer; font-family: inherit;
+  border: 1px solid var(--line); background: #FAFAFB; color: var(--sub); font-size: 13px; text-align: left;
+}
+.kb-check.on { border-color: var(--accent); background: #F0F8F2; color: #2E7D48; font-weight: 500; }
+.kb-check-box {
+  width: 19px; height: 19px; border-radius: 5px; flex-shrink: 0;
+  border: 1.5px solid #C9CDD3; background: #fff;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+}
+.kb-check.on .kb-check-box { border-color: var(--accent); background: var(--accent); }
+
+/* 分析タブのグループ見出し。記録タブと同じ並びに、そのグループの合計を添える */
+.kb-section-label.kb-grouphead { display: flex; align-items: baseline; justify-content: space-between; }
+.kb-section-label.kb-grouphead b { font-size: 12px; font-weight: 700; color: var(--ink); font-feature-settings: "tnum"; }
