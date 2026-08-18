@@ -348,6 +348,7 @@ function KakeiboApp() {
   const [enType, setEnType] = useState("expense");
   const [enPending, setEnPending] = useState(true);
   const [enError, setEnError] = useState("");
+  const [enConfirmDel, setEnConfirmDel] = useState(false);
 
   const [catFormOpen, setCatFormOpen] = useState(false);
   const [catMode, setCatMode] = useState("add");
@@ -672,6 +673,7 @@ function KakeiboApp() {
     setEnType("expense");
     setEnPending(true);  // 入力した時点では金額は未確定
     setEnError("");
+    setEnConfirmDel(false);
   }
   function openEntryEdit(cat, entry) {
     if (!cat) return;
@@ -684,8 +686,9 @@ function KakeiboApp() {
     setEnType(isIncome(entry) ? "income" : "expense");
     setEnPending(!!entry.pending);
     setEnError("");
+    setEnConfirmDel(false);
   }
-  function closeEntry() { setEntryTarget(null); setEnError(""); backToDetail(); }
+  function closeEntry() { setEntryTarget(null); setEnError(""); setEnConfirmDel(false); backToDetail(); }
 
   function submitEntry() {
     const amount = Number(enAmount);
@@ -1758,7 +1761,14 @@ function KakeiboApp() {
               </button>
               {entryTarget.entryId ? (
                 <div className="kb-btn-row" style={{ marginTop: 9 }}>
-                  <button className="kb-btn danger" onClick={() => deleteEntry(entryTarget.entryId)}>この記録を削除</button>
+                  {enConfirmDel ? (
+                    <>
+                      <button className="kb-btn danger" onClick={() => deleteEntry(entryTarget.entryId)}>本当に削除する</button>
+                      <button className="kb-btn ghost" onClick={() => setEnConfirmDel(false)}>やめる</button>
+                    </>
+                  ) : (
+                    <button className="kb-btn danger" onClick={() => setEnConfirmDel(true)}>この記録を削除</button>
+                  )}
                 </div>
               ) : (
                 entryCat.group === "固定費" && entryCat.monthlyBudget > 0 && (
