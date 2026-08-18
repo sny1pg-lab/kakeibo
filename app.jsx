@@ -1876,13 +1876,16 @@ function KakeiboApp() {
                           <button className="kb-row" key={cat.id} onClick={() => openDetail("category", cat.id)}>
                             <div className="kb-dot" style={{ background: color }}>{cat.name.slice(0, 1)}</div>
                             <div className="kb-rowmain">
-                              <div className="kb-rowtitle">{cat.name}</div>
+                              <div className="kb-rowtitle">
+                                {cat.name}
+                                {cat.note && <span className="kb-titlenote">{cat.note}</span>}
+                              </div>
                               {showBudget && (
                                 <div className="kb-bar thin">
                                   <span style={{ width: `${pct}%`, background: over ? "var(--red)" : color }} />
                                 </div>
                               )}
-                              {cat.note && <div className="kb-rowsub">{cat.note}</div>}
+
                             </div>
                             <div className="kb-ana-vals">
                               <div className="kb-ana-spent" style={{ color: over ? "var(--red)" : "var(--ink)" }}>{yen(spent)}</div>

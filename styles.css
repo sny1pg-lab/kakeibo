@@ -45,15 +45,20 @@ body { background: #F2F3F5; }
 .kb-card + .kb-card { margin-top: 10px; }
 
 .kb-row { display: flex; align-items: center; gap: 11px; padding: 13px 14px; border-bottom: 1px solid var(--line); cursor: pointer; background: transparent; border-left: none; border-right: none; border-top: none; width: 100%; text-align: left; font-family: inherit; color: inherit; }
-.kb-row:last-child { border-bottom: none; }
+/* 最後の行も枠線ぶんの高さは残す。none にすると1pxだけ低くなって行が揃わない */
+.kb-row:last-child { border-bottom-color: transparent; }
 .kb-row:active { background: #FAFAFB; }
 .kb-dot { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; }
 .kb-rowmain { flex: 1; min-width: 0; }
-.kb-rowtitle { font-size: 14.5px; font-weight: 500; }
-.kb-rowsub { font-size: 11px; color: var(--sub); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 行の高さは一覧ごとに揃える。行送りを書体に任せると、文字の種類や
+   環境によって1〜4pxずれてしまうので、ここで決めておく */
+.kb-rowtitle { font-size: 14.5px; font-weight: 500; line-height: 20px; }
+.kb-rowsub { font-size: 11px; color: var(--sub); margin-top: 2px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 分析タブの補足。行を増やさず名前の横に添える */
+.kb-titlenote { font-size: 11px; font-weight: 400; color: var(--sub); margin-left: 6px; }
 .kb-note { font-size: 11px; color: var(--sub); line-height: 1.55; padding: 7px 3px 0; }
 .kb-rowright { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.kb-amount { font-size: 15px; font-weight: 700; font-feature-settings: "tnum"; }
+.kb-amount { font-size: 15px; font-weight: 700; line-height: 20px; font-feature-settings: "tnum"; }
 .kb-chev { color: #C4C8CE; flex-shrink: 0; }
 
 .kb-hint { display: flex; align-items: center; gap: 8px; padding: 13px 14px; background: #F0F8F2; color: #2E7D48; font-size: 12px; border-radius: 12px; margin-top: 10px; cursor: pointer; border: none; width: 100%; text-align: left; font-family: inherit; }
@@ -99,8 +104,8 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 .kb-bar.thin { height: 5px; margin-top: 7px; }
 
 .kb-ana-vals { text-align: right; flex-shrink: 0; }
-.kb-ana-spent { font-size: 15px; font-weight: 700; font-feature-settings: "tnum"; }
-.kb-ana-rest { font-size: 10.5px; color: var(--sub); margin-top: 1px; font-feature-settings: "tnum"; }
+.kb-ana-spent { font-size: 15px; font-weight: 700; line-height: 20px; font-feature-settings: "tnum"; }
+.kb-ana-rest { font-size: 10.5px; color: var(--sub); margin-top: 1px; line-height: 15px; font-feature-settings: "tnum"; }
 
 .kb-datehead { display: flex; align-items: center; justify-content: space-between; padding: 9px 4px 6px; }
 .kb-datehead .d { font-size: 12.5px; font-weight: 700; }
@@ -157,7 +162,7 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 .kb-savebox.error { background: #FDF0EF; color: var(--red); }
 .kb-btn:disabled { opacity: 0.45; cursor: default; }
 .kb-partytop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.kb-partyamt { font-size: 17px; font-weight: 700; font-feature-settings: "tnum"; }
+.kb-partyamt { font-size: 17px; font-weight: 700; line-height: 22px; font-feature-settings: "tnum"; }
 
 @keyframes kb-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes kb-up { from { transform: translateY(14px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
@@ -236,7 +241,7 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 /* 右端は上の行の金額と揃える。行は 14px の余白のあとに
    11px の隙間と 17px の矢印が入るので、その分だけ広く取る */
 .kb-bgtotal { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 42px 12px 14px; border-bottom: 1px solid var(--line); }
-.kb-bgtotal:last-child { border-bottom: none; }
+.kb-bgtotal:last-child { border-bottom-color: transparent; }
 .kb-bgtotal span { font-size: 12px; color: var(--sub); }
 .kb-bgtotal b { font-size: 17px; font-weight: 700; font-feature-settings: "tnum"; }
 .kb-bgtotal.sub b { font-size: 14px; font-weight: 500; color: var(--sub); }
