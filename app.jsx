@@ -376,7 +376,6 @@ function KakeiboApp() {
   const [tkPending, setTkPending] = useState(true);
   const [tkError, setTkError] = useState("");
   const [tkConfirmDel, setTkConfirmDel] = useState(false);
-  const [tkTag, setTkTag] = useState("");
   const [tkMethod, setTkMethod] = useState("");
 
   const [trFormOpen, setTrFormOpen] = useState(false);
@@ -860,14 +859,14 @@ function KakeiboApp() {
 
   function openTkNew() {
     setTkEditId(null); setTkDate(todayInYear()); setTkMemo(""); setTkParty(parties[0]); setTkAmount("");
-    setTkConfirmDel(false); setTkTag(""); setTkMethod(methods[0]);
+    setTkConfirmDel(false); setTkMethod(methods[0]);
     setTkPending(true); setTkError("");
     setTkFormOpen(true);
   }
   function openTkEdit(t) {
     setTkEditId(t.id); setTkDate(t.date || ""); setTkMemo(t.memo || "");
     setTkParty(t.party || parties[0]);
-    setTkConfirmDel(false); setTkTag(t.tag || ""); setTkMethod(t.method || methods[0]);
+    setTkConfirmDel(false); setTkMethod(t.method || methods[0]);
     setTkAmount(String(t.amount ?? "")); setTkPending(!!t.pending); setTkError("");
     setTkFormOpen(true);
   }
@@ -878,7 +877,6 @@ function KakeiboApp() {
    */
   function extraTk() {
     const out = {};
-    if (tkSupportsTag) out.tag = tkTag.trim();
     if (tkSupportsMethod) out.method = tkMethod;
     return out;
   }
@@ -1171,19 +1169,9 @@ function KakeiboApp() {
         .sort((a, b) => (sortAsc ? 1 : -1) * (a.date || "").localeCompare(b.date || ""))
     : [];
 
-  // Apps Script が新しい列を扱えるか。貼り替えるまでは false になり、項目自体を出さない
-  const tkSupportsTag = KakeiboAPI.supports("settlements", "tag");
+  // Apps Script が新しい列を扱えるか。貼り替えるまでは false になり、項目自体を出さない。
+  // tag の列も用意してあるが、内容の欄と紛らわしいので画面には出していない
   const tkSupportsMethod = KakeiboAPI.supports("settlements", "method");
-
-  // 内訳は決まった一覧を持たせず、これまでに使った名前を候補として出すだけにする
-  const tkTagSuggestions = useMemo(() => {
-    const seen = [];
-    settlements.forEach((t) => {
-      const v = (t.tag || "").trim();
-      if (v && seen.indexOf(v) < 0) seen.push(v);
-    });
-    return seen.sort((a, b) => a.localeCompare(b, "ja"));
-  }, [settlements]);
 
   // 何かしら表示できる中身があるか。控えを出している間の読み込み失敗で画面を空にしないため
   const hasData = categories.length > 0 || entries.length > 0
@@ -1669,9 +1657,7 @@ function KakeiboApp() {
                         </span>
                         <div className="kb-rowmain" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }}>
                           <div className="kb-rowtitle">{t.memo}</div>
-                          {(t.tag || t.method) && (
-                            <div className="kb-rowsub">{[t.tag, t.method].filter(Boolean).join("・")}</div>
-                          )}
+                          {t.method && <div className="kb-rowsub">{t.method}</div>}
                         </div>
                         <span className="kb-amount" style={{ color: t.pending ? "var(--pending)" : t.settled ? "var(--sub)" : "var(--red)" }}>{yen(t.amount)}</span>
                         <button
@@ -1869,21 +1855,6 @@ function KakeiboApp() {
                   {withCurrent(parties, tkParty).map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
-              {tkSupportsTag && (
-                <div className="kb-field">
-                  <label className="kb-label">内訳（任意）</label>
-                  <input
-                    className="kb-input"
-                    value={tkTag}
-                    onChange={(ev) => setTkTag(ev.target.value)}
-                    list="kb-tk-tags"
-                    placeholder="食費・日用品など"
-                  />
-                  <datalist id="kb-tk-tags">
-                    {tkTagSuggestions.map((t) => <option key={t} value={t} />)}
-                  </datalist>
-                </div>
-              )}
               <div className="kb-field">
                 <label className="kb-label">内容</label>
                 <input className="kb-input" value={tkMemo} onChange={(ev) => setTkMemo(ev.target.value)} placeholder="無印良品" />
