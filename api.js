@@ -13,6 +13,7 @@
   var CONFIG_KEY = 'kakeibo.apiUrl';
   var QUEUE_KEY = 'kakeibo.queue';
   var SNAPSHOT_KEY = 'kakeibo.snapshot';
+  var COLUMNS_KEY = 'kakeibo.columns';
   var MAX_BACKOFF_MS = 30000;
   var REQUEST_TIMEOUT_MS = 30000;
 
@@ -46,6 +47,16 @@
   var backoff = 1000;
   var listeners = [];
   var lastError = '';
+
+  /**
+   * サーバ側が扱える列。Apps Script が返してくる。
+   * 古いまま貼り替えていない場合は返ってこないので null のままになる。
+   * アプリはこれを見て、新しい項目を出すかどうかを決める。
+   * 起動直後から判断できるよう、前回の値を控えておく。
+   */
+  var serverColumns = (function () {
+    try { return JSON.parse(storeGet(COLUMNS_KEY) || 'null'); } catch (e) { return null; }
+  })();
 
   function notify() {
     var state = {
@@ -176,6 +187,9 @@
     loadAll: function () {
       return request({ method: 'GET' }).then(function (json) {
         var d = json.data || {};
+        serverColumns = json.columns || null;
+        if (serverColumns) storeSet(COLUMNS_KEY, JSON.stringify(serverColumns));
+        else storeDel(COLUMNS_KEY);
         return {
           categories: (d.categories || []).map(function (c) {
             return {
@@ -213,7 +227,7 @@
             };
           }),
           settlements: (d.settlements || []).map(function (s) {
-            return {
+            var rec = {
               id: s.id,
               date: s.date,
               memo: s.memo || '',
@@ -222,9 +236,24 @@
               settled: s.settled === true || s.settled === 'TRUE',
               pending: s.pending === true || s.pending === 'TRUE'
             };
+            // 後から足した列。Apps Script が扱えるときだけ持たせる。
+            // 常に持たせると、貼り替えていない環境でも保存のたびに送ってしまう
+            if (api.supports('settlements', 'tag')) rec.tag = s.tag || '';
+            if (api.supports('settlements', 'method')) rec.method = s.method || '';
+            return rec;
           })
         };
       });
+    },
+
+    /**
+     * その列をサーバが扱えるか。
+     * Apps Script を貼り替えていないうちは false を返すので、
+     * 画面はその項目を出さない。入れたのに保存されない事態を防ぐ。
+     */
+    supports: function (table, column) {
+      if (!serverColumns || !serverColumns[table]) return false;
+      return serverColumns[table].indexOf(column) >= 0;
     },
 
     /** 1件の追加・更新をキューに積む。すぐ返る。 */

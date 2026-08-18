@@ -270,7 +270,7 @@ function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete })
           <button className="kb-btn ghost" style={{ width: "auto", padding: "0 16px" }} onClick={submitAdd}>追加</button>
         </div>
       ) : (
-        <button className="kb-btn ghost" style={{ marginTop: 9 }} onClick={() => { reset(); setAdding(true); }}>
+        <button className="kb-btn" style={{ marginTop: 9 }} onClick={() => { reset(); setAdding(true); }}>
           {title}を追加
         </button>
       )}
@@ -376,6 +376,8 @@ function KakeiboApp() {
   const [tkPending, setTkPending] = useState(true);
   const [tkError, setTkError] = useState("");
   const [tkConfirmDel, setTkConfirmDel] = useState(false);
+  const [tkTag, setTkTag] = useState("");
+  const [tkMethod, setTkMethod] = useState("");
 
   const [trFormOpen, setTrFormOpen] = useState(false);
   const [trEditId, setTrEditId] = useState(null);
@@ -858,18 +860,29 @@ function KakeiboApp() {
 
   function openTkNew() {
     setTkEditId(null); setTkDate(todayInYear()); setTkMemo(""); setTkParty(parties[0]); setTkAmount("");
-    setTkConfirmDel(false);
+    setTkConfirmDel(false); setTkTag(""); setTkMethod(methods[0]);
     setTkPending(true); setTkError("");
     setTkFormOpen(true);
   }
   function openTkEdit(t) {
     setTkEditId(t.id); setTkDate(t.date || ""); setTkMemo(t.memo || "");
     setTkParty(t.party || parties[0]);
-    setTkConfirmDel(false);
+    setTkConfirmDel(false); setTkTag(t.tag || ""); setTkMethod(t.method || methods[0]);
     setTkAmount(String(t.amount ?? "")); setTkPending(!!t.pending); setTkError("");
     setTkFormOpen(true);
   }
   function closeTk() { setTkFormOpen(false); setTkEditId(null); setTkError(""); setTkConfirmDel(false); backToDetail(); }
+  /**
+   * 立替に足した項目。Apps Script が対応していないうちは何も付けない。
+   * 付けても保存されないので、入れたつもりで消えるより出さないほうがよい。
+   */
+  function extraTk() {
+    const out = {};
+    if (tkSupportsTag) out.tag = tkTag.trim();
+    if (tkSupportsMethod) out.method = tkMethod;
+    return out;
+  }
+
   function submitTk() {
     const memo = tkMemo.trim();
     const amount = Number(tkAmount);
@@ -877,12 +890,12 @@ function KakeiboApp() {
     if (!tkAmount || isNaN(amount) || amount <= 0) { setTkError("金額を正しく入力してください"); return; }
     if (tkEditId) {
       const base = settlements.find((s) => s.id === tkEditId);
-      const updated = { ...base, memo, party: tkParty, amount, date: tkDate, pending: tkPending };
+      const updated = { ...base, memo, party: tkParty, amount, date: tkDate, pending: tkPending, ...extraTk() };
       setSettlements((p) => p.map((s) => (s.id === tkEditId ? updated : s)));
       saveSettlement(updated);
       flash("立替の記録を更新しました");
     } else {
-      const created = { id: KakeiboAPI.newId("s_"), date: tkDate, memo, party: tkParty, amount, settled: false, pending: tkPending };
+      const created = { id: KakeiboAPI.newId("s_"), date: tkDate, memo, party: tkParty, amount, settled: false, pending: tkPending, ...extraTk() };
       setSettlements((p) => [...p, created]);
       saveSettlement(created);
       flash(`${tkParty}　${yen(amount)} を記録しました`);
@@ -1157,6 +1170,20 @@ function KakeiboApp() {
         .filter((t) => t.party === detail.key)
         .sort((a, b) => (sortAsc ? 1 : -1) * (a.date || "").localeCompare(b.date || ""))
     : [];
+
+  // Apps Script が新しい列を扱えるか。貼り替えるまでは false になり、項目自体を出さない
+  const tkSupportsTag = KakeiboAPI.supports("settlements", "tag");
+  const tkSupportsMethod = KakeiboAPI.supports("settlements", "method");
+
+  // 内訳は決まった一覧を持たせず、これまでに使った名前を候補として出すだけにする
+  const tkTagSuggestions = useMemo(() => {
+    const seen = [];
+    settlements.forEach((t) => {
+      const v = (t.tag || "").trim();
+      if (v && seen.indexOf(v) < 0) seen.push(v);
+    });
+    return seen.sort((a, b) => a.localeCompare(b, "ja"));
+  }, [settlements]);
 
   // 何かしら表示できる中身があるか。控えを出している間の読み込み失敗で画面を空にしないため
   const hasData = categories.length > 0 || entries.length > 0
@@ -1642,6 +1669,9 @@ function KakeiboApp() {
                         </span>
                         <div className="kb-rowmain" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }}>
                           <div className="kb-rowtitle">{t.memo}</div>
+                          {(t.tag || t.method) && (
+                            <div className="kb-rowsub">{[t.tag, t.method].filter(Boolean).join("・")}</div>
+                          )}
                         </div>
                         <span className="kb-amount" style={{ color: t.pending ? "var(--pending)" : t.settled ? "var(--sub)" : "var(--red)" }}>{yen(t.amount)}</span>
                         <button
@@ -1839,10 +1869,33 @@ function KakeiboApp() {
                   {withCurrent(parties, tkParty).map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
+              {tkSupportsTag && (
+                <div className="kb-field">
+                  <label className="kb-label">内訳（任意）</label>
+                  <input
+                    className="kb-input"
+                    value={tkTag}
+                    onChange={(ev) => setTkTag(ev.target.value)}
+                    list="kb-tk-tags"
+                    placeholder="食費・日用品など"
+                  />
+                  <datalist id="kb-tk-tags">
+                    {tkTagSuggestions.map((t) => <option key={t} value={t} />)}
+                  </datalist>
+                </div>
+              )}
               <div className="kb-field">
                 <label className="kb-label">内容</label>
                 <input className="kb-input" value={tkMemo} onChange={(ev) => setTkMemo(ev.target.value)} placeholder="無印良品" />
               </div>
+              {tkSupportsMethod && (
+                <div className="kb-field">
+                  <label className="kb-label">支払い方法</label>
+                  <select className="kb-input" value={tkMethod} onChange={(ev) => setTkMethod(ev.target.value)}>
+                    {withCurrent(methods, tkMethod).map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              )}
               <CheckRow checked={!tkPending} onChange={(v) => setTkPending(!v)}>
                 確定
               </CheckRow>
