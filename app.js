@@ -246,8 +246,10 @@
         key: c.id,
         label: c.name,
         amount: plan.per[c.id] ? plan.per[c.id].monthly : 0,
-        memo: "\u53CE\u5165\u304B\u3089\u56FA\u5B9A\u8CBB\u3068\u4E88\u5B9A\u8CBB\u3092\u5F15\u3044\u305F\u6B8B\u308A",
-        derived: true
+        method: plan.per[c.id] ? plan.per[c.id].method : "",
+        memo: plan.per[c.id] && plan.per[c.id].memo || "\u53CE\u5165\u304B\u3089\u56FA\u5B9A\u8CBB\u3068\u4E88\u5B9A\u8CBB\u3092\u5F15\u3044\u305F\u6B8B\u308A",
+        derived: true,
+        onClick: () => onEdit({ target: c.id, label: c.name, kind: "note" })
       }
     )), planned.length > 0 && /* @__PURE__ */ React.createElement(
       Row,
@@ -446,7 +448,8 @@
       });
       const legacyFreeAnnual = cats.filter((c) => c.group === "\u81EA\u7531\u8CBB").reduce((a, c) => a + (Number(c.monthlyBudget) || 0) * 12, 0);
       const incomeRow = byTarget[INCOME_TARGET];
-      const incomeMonthly = live && incomeRow ? incomeRow.monthly : (fixedAnnual + plannedAnnual + legacyFreeAnnual) / 12;
+      const legacyIncomeMonthly = fixedAnnual / 12 + legacyFreeAnnual / 12 + Math.round(plannedAnnual / 12);
+      const incomeMonthly = live && incomeRow ? incomeRow.monthly : legacyIncomeMonthly;
       const incomeAnnual = incomeMonthly * 12;
       const freeCats = cats.filter((c) => c.group === "\u81EA\u7531\u8CBB");
       const freeAnnual = incomeAnnual - fixedAnnual - plannedAnnual;
@@ -476,18 +479,19 @@
       setBgError("");
     }
     function submitBudget() {
+      const t = bgTarget;
       const amount = Number(bgAmount);
-      if (bgAmount === "" || isNaN(amount) || amount < 0) {
+      if (t.kind !== "note" && (bgAmount === "" || isNaN(amount) || amount < 0)) {
         setBgError("\u91D1\u984D\u3092\u6B63\u3057\u304F\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
         return;
       }
-      const t = bgTarget;
       const existing = budgets.find((b) => b.year === year && b.target === t.target);
       const rec = {
         id: existing ? existing.id : KakeiboAPI.newId("b_"),
         year,
         target: t.target,
-        monthly: t.kind === "annual" ? 0 : amount,
+        // 自由費は計算で出るので金額は持たせない
+        monthly: t.kind === "note" || t.kind === "annual" ? 0 : amount,
         annual: t.kind === "annual" ? amount : 0,
         method: bgMethod,
         memo: bgMemo.trim()
@@ -506,7 +510,7 @@
             memo: ""
           });
         };
-        seed(INCOME_TARGET, "income", budgetPlan.income.monthly, 0);
+        seed(INCOME_TARGET, "income", Math.round(budgetPlan.income.monthly), 0);
         budgetCats.forEach((c) => {
           const b = budgetPlan.per[c.id];
           if (!b) return;
@@ -1489,7 +1493,7 @@
     } }, "\u8AAD\u307F\u8FBC\u307F\u76F4\u3059")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u63A5\u7D9A\u5148"), /* @__PURE__ */ React.createElement("div", { className: "kb-savebox", style: { wordBreak: "break-all", fontFamily: "ui-monospace, monospace", fontSize: 10.5 } }, KakeiboAPI.getUrl()), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => {
       KakeiboAPI.setUrl("");
       setNeedsSetup(true);
-    } }, "\u8A2D\u5B9A\u3057\u76F4\u3059")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u30A2\u30D7\u30EA\u306E\u66F4\u65B0"), /* @__PURE__ */ React.createElement("div", { className: "kb-savebox" }, "2\u56DE\u76EE\u304B\u3089\u306F\u901A\u4FE1\u3092\u5F85\u305F\u305A\u306B\u958B\u3051\u308B\u3088\u3046\u3001\u30A2\u30D7\u30EA\u672C\u4F53\u3092\u7AEF\u672B\u306B\u63A7\u3048\u3066\u3044\u307E\u3059\u3002 \u753B\u9762\u304C\u53E4\u3044\u307E\u307E\u5909\u308F\u3089\u306A\u3044\u3068\u304D\u306F\u3001\u305D\u306E\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u8A18\u9332\u306B\u306F\u5F71\u97FF\u3057\u307E\u305B\u3093\u3002"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: resetAppCache }, "\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3059"))))), bgTarget && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => setBgTarget(null) }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, bgTarget.label, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-period" }, " ", year, "\u5E74\u306E", bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97" : bgTarget.kind === "income" ? "\u6708\u306E\u53CE\u5165" : "\u6708\u4E88\u7B97")), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: () => setBgTarget(null), "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97\uFF08\u5186\uFF09" : bgTarget.kind === "income" ? "\u6BCE\u6708\u306E\u53CE\u5165\uFF08\u5186\uFF09" : "\u6708\u4E88\u7B97\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(
+    } }, "\u8A2D\u5B9A\u3057\u76F4\u3059")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u30A2\u30D7\u30EA\u306E\u66F4\u65B0"), /* @__PURE__ */ React.createElement("div", { className: "kb-savebox" }, "2\u56DE\u76EE\u304B\u3089\u306F\u901A\u4FE1\u3092\u5F85\u305F\u305A\u306B\u958B\u3051\u308B\u3088\u3046\u3001\u30A2\u30D7\u30EA\u672C\u4F53\u3092\u7AEF\u672B\u306B\u63A7\u3048\u3066\u3044\u307E\u3059\u3002 \u753B\u9762\u304C\u53E4\u3044\u307E\u307E\u5909\u308F\u3089\u306A\u3044\u3068\u304D\u306F\u3001\u305D\u306E\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u8A18\u9332\u306B\u306F\u5F71\u97FF\u3057\u307E\u305B\u3093\u3002"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: resetAppCache }, "\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3059"))))), bgTarget && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => setBgTarget(null) }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, bgTarget.label, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-period" }, " ", year, "\u5E74\u306E", bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97" : bgTarget.kind === "income" ? "\u6708\u306E\u53CE\u5165" : "\u6708\u4E88\u7B97")), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: () => setBgTarget(null), "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), bgTarget.kind === "note" ? /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u91D1\u984D\u306F\u53CE\u5165\u304B\u3089\u56FA\u5B9A\u8CBB\u3068\u4E88\u5B9A\u8CBB\u3092\u5F15\u3044\u305F\u6B8B\u308A\u306A\u306E\u3067\u3001\u3053\u3053\u3067\u306F\u5909\u3048\u3089\u308C\u307E\u305B\u3093\u3002 \u5F15\u304D\u843D\u3068\u3057\u5148\u3068\u30E1\u30E2\u3060\u3051\u8A2D\u5B9A\u3067\u304D\u307E\u3059\u3002") : /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97\uFF08\u5186\uFF09" : bgTarget.kind === "income" ? "\u6BCE\u6708\u306E\u53CE\u5165\uFF08\u5186\uFF09" : "\u6708\u4E88\u7B97\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(
       "input",
       {
         className: "kb-input amount",

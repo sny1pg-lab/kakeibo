@@ -227,7 +227,9 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 
 /* 予算タブ */
 .kb-bgrow:disabled { cursor: default; }
-.kb-bgtotal { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+/* 右端は上の行の金額と揃える。行は 14px の余白のあとに
+   11px の隙間と 17px の矢印が入るので、その分だけ広く取る */
+.kb-bgtotal { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 42px 12px 14px; border-bottom: 1px solid var(--line); }
 .kb-bgtotal:last-child { border-bottom: none; }
 .kb-bgtotal span { font-size: 12px; color: var(--sub); }
 .kb-bgtotal b { font-size: 17px; font-weight: 700; font-feature-settings: "tnum"; }

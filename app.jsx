@@ -372,8 +372,10 @@ function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
             key={c.id}
             label={c.name}
             amount={plan.per[c.id] ? plan.per[c.id].monthly : 0}
-            memo="収入から固定費と予定費を引いた残り"
+            method={plan.per[c.id] ? plan.per[c.id].method : ""}
+            memo={(plan.per[c.id] && plan.per[c.id].memo) || "収入から固定費と予定費を引いた残り"}
             derived
+            onClick={() => onEdit({ target: c.id, label: c.name, kind: "note" })}
           />
         ))}
         {planned.length > 0 && (
@@ -660,9 +662,11 @@ function KakeiboApp() {
       .filter((c) => c.group === "自由費")
       .reduce((a, c) => a + (Number(c.monthlyBudget) || 0) * 12, 0);
     const incomeRow = byTarget[INCOME_TARGET];
-    const incomeMonthly = live && incomeRow
-      ? incomeRow.monthly
-      : (fixedAnnual + plannedAnnual + legacyFreeAnnual) / 12;
+    // 行が無いうちは、Excelの予算表と同じ出し方にする。
+    // 予定費の月額を丸めてから足すので、ここでは端数が出ない
+    const legacyIncomeMonthly =
+      fixedAnnual / 12 + legacyFreeAnnual / 12 + Math.round(plannedAnnual / 12);
+    const incomeMonthly = live && incomeRow ? incomeRow.monthly : legacyIncomeMonthly;
     const incomeAnnual = incomeMonthly * 12;
 
     // 自由費は残り。複数あるときは頭のひとつに寄せる（実際には1件だけ）
@@ -699,17 +703,18 @@ function KakeiboApp() {
   }
 
   function submitBudget() {
+    const t = bgTarget;
     const amount = Number(bgAmount);
-    if (bgAmount === "" || isNaN(amount) || amount < 0) {
+    if (t.kind !== "note" && (bgAmount === "" || isNaN(amount) || amount < 0)) {
       setBgError("金額を正しく入力してください"); return;
     }
-    const t = bgTarget;
     const existing = budgets.find((b) => b.year === year && b.target === t.target);
     const rec = {
       id: existing ? existing.id : KakeiboAPI.newId("b_"),
       year,
       target: t.target,
-      monthly: t.kind === "annual" ? 0 : amount,
+      // 自由費は計算で出るので金額は持たせない
+      monthly: t.kind === "note" || t.kind === "annual" ? 0 : amount,
       annual: t.kind === "annual" ? amount : 0,
       method: bgMethod,
       memo: bgMemo.trim(),
@@ -728,7 +733,7 @@ function KakeiboApp() {
           method: "", memo: "",
         });
       };
-      seed(INCOME_TARGET, "income", budgetPlan.income.monthly, 0);
+      seed(INCOME_TARGET, "income", Math.round(budgetPlan.income.monthly), 0);
       budgetCats.forEach((c) => {
         const b = budgetPlan.per[c.id];
         if (!b) return;
@@ -2431,13 +2436,20 @@ function KakeiboApp() {
                 </span>
                 <button className="kb-close" onClick={() => setBgTarget(null)} aria-label="閉じる"><X size={19} /></button>
               </div>
-              <div className="kb-field">
-                <label className="kb-label">
-                  {bgTarget.kind === "annual" ? "年間予算（円）" : bgTarget.kind === "income" ? "毎月の収入（円）" : "月予算（円）"}
-                </label>
-                <input className="kb-input amount" type="number" inputMode="numeric"
-                       value={bgAmount} onChange={(ev) => setBgAmount(ev.target.value)} placeholder="0" autoFocus />
-              </div>
+              {bgTarget.kind === "note" ? (
+                <div className="kb-note">
+                  金額は収入から固定費と予定費を引いた残りなので、ここでは変えられません。
+                  引き落とし先とメモだけ設定できます。
+                </div>
+              ) : (
+                <div className="kb-field">
+                  <label className="kb-label">
+                    {bgTarget.kind === "annual" ? "年間予算（円）" : bgTarget.kind === "income" ? "毎月の収入（円）" : "月予算（円）"}
+                  </label>
+                  <input className="kb-input amount" type="number" inputMode="numeric"
+                         value={bgAmount} onChange={(ev) => setBgAmount(ev.target.value)} placeholder="0" autoFocus />
+                </div>
+              )}
               <div className="kb-field">
                 <label className="kb-label">引き落とし先（任意）</label>
                 <select className="kb-input" value={bgMethod} onChange={(ev) => setBgMethod(ev.target.value)}>
