@@ -29,6 +29,10 @@ const MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP];
 const DEFAULT_PARTIES = ["生活費", "おいぬ", "娯楽費", "家具家電", "その他", "KITI", "ウェルボン"];
 const DEFAULT_METHODS = ["楽天カード", "楽天ペイ", "楽天キャッシュ", "楽天銀行", "PayPayカード", "PayPay残高", "PASMO", "スタバカード", "NLカード", "現金", "その他"];
 
+// 履歴の絞り込みで、固定費のカテゴリをひとまとめに扱うための印。
+// カテゴリのidと混ざらないよう、idには使われない形にしてある。
+const HIST_FIXED = "group:固定費";
+
 function isMaster(c) { return MASTER_GROUPS.indexOf(c.group) >= 0; }
 function defaultsOf(group) { return group === PARTY_GROUP ? DEFAULT_PARTIES : DEFAULT_METHODS; }
 
@@ -604,6 +608,14 @@ function KakeiboApp() {
     return "";
   }
 
+  // 履歴の絞り込みでは、固定費は1件ずつ出さずにまとめて扱う。
+  // 毎月の引き落としが並ぶだけで、1件ずつ選ぶ意味が薄いため。
+  const fixedCatIds = useMemo(() => {
+    const m = {};
+    budgetCats.forEach((c) => { if (c.group === "固定費") m[c.id] = true; });
+    return m;
+  }, [budgetCats]);
+
   const catIndex = useMemo(() => {
     const m = {};
     budgetCats.forEach((c, i) => { m[c.id] = i; });
@@ -993,28 +1005,36 @@ function KakeiboApp() {
   const matchesHistCat = useCallback((row) => {
     if (histCat === null) return true;
     if (histCat === "transfer") return row.kind === "transfer";
+    if (histCat === HIST_FIXED) return row.kind !== "transfer" && !!fixedCatIds[row.catId];
     return row.kind !== "transfer" && row.catId === histCat;
-  }, [histCat]);
+  }, [histCat, fixedCatIds]);
 
   const histMonthTotals = useMemo(() => {
     const arr = Array(12).fill(0);
     yearEntries.forEach((e) => {
-      if (histCat !== null && (histCat === "transfer" || e.categoryId !== histCat)) return;
+      if (histCat === "transfer") return;
+      if (histCat === HIST_FIXED) {
+        if (!fixedCatIds[e.categoryId]) return;
+      } else if (histCat !== null && e.categoryId !== histCat) {
+        return;
+      }
       arr[monthIdxOf(e.date)] += signedAmount(e);
     });
     return arr;
-  }, [yearEntries, histCat]);
+  }, [yearEntries, histCat, fixedCatIds]);
 
   /** カテゴリ絞り込みのチップに出す件数。 */
   const histCatCounts = useMemo(() => {
     const m = { transfer: 0 };
+    m[HIST_FIXED] = 0;
     allRows.forEach((r) => {
       if (histMonth !== null && histMonth !== "pending" && monthIdxOf(r.date) !== histMonth) return;
-      if (r.kind === "transfer") m.transfer += 1;
-      else m[r.catId] = (m[r.catId] || 0) + 1;
+      if (r.kind === "transfer") { m.transfer += 1; return; }
+      m[r.catId] = (m[r.catId] || 0) + 1;
+      if (fixedCatIds[r.catId]) m[HIST_FIXED] += 1;
     });
     return m;
-  }, [allRows, histMonth]);
+  }, [allRows, histMonth, fixedCatIds]);
 
   const histRows = allRows
     .filter((e) => histMonth === null || histMonth === "pending" || monthIdxOf(e.date) === histMonth)
@@ -1133,7 +1153,9 @@ function KakeiboApp() {
 
   const maxParty = Math.max(...partySummary.map((p) => p.unsettled + p.settled), 1);
   const dPartyItems = detail && detail.type === "party"
-    ? scopedSettlements.filter((t) => t.party === detail.key).sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+    ? scopedSettlements
+        .filter((t) => t.party === detail.key)
+        .sort((a, b) => (sortAsc ? 1 : -1) * (a.date || "").localeCompare(b.date || ""))
     : [];
 
   // 何かしら表示できる中身があるか。控えを出している間の読み込み失敗で画面を空にしないため
@@ -1291,7 +1313,7 @@ function KakeiboApp() {
               {histMonth !== "pending" && (
                 <div className="kb-chips" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button className={`kb-tagchip ${histCat === null ? "on" : ""}`} onClick={() => setHistCat(null)}>すべて</button>
-                  {budgetCats.map((c) => {
+                  {budgetCats.filter((c) => c.group !== "固定費").map((c) => {
                     const n = histCatCounts[c.id] || 0;
                     return (
                       <button
@@ -1303,6 +1325,14 @@ function KakeiboApp() {
                       </button>
                     );
                   })}
+                  {budgetCats.some((c) => c.group === "固定費") && (
+                    <button
+                      className={`kb-tagchip ${histCat === HIST_FIXED ? "on" : ""} ${!histCatCounts[HIST_FIXED] ? "empty" : ""}`}
+                      onClick={() => setHistCat(histCat === HIST_FIXED ? null : HIST_FIXED)}
+                    >
+                      固定費{histCatCounts[HIST_FIXED] ? ` ${histCatCounts[HIST_FIXED]}` : ""}
+                    </button>
+                  )}
                   <button
                     className={`kb-tagchip ${histCat === "transfer" ? "on" : ""} ${!histCatCounts.transfer ? "empty" : ""}`}
                     onClick={() => setHistCat(histCat === "transfer" ? null : "transfer")}
@@ -1599,7 +1629,10 @@ function KakeiboApp() {
                 <>
                   <div className="kb-detail-total">
                     <span>未精算 {yen(dPartyItems.filter((t) => !t.settled).reduce((a, t) => a + t.amount, 0))}</span>
-                    <span className="kb-detail-count">{dPartyItems.length}件</span>
+                    <div className="kb-sortwrap">
+                      <span className="kb-detail-count">{dPartyItems.length}件</span>
+                      <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+                    </div>
                   </div>
                   <div className="kb-card" style={{ background: "#FAFAFB" }}>
                     {dPartyItems.map((t) => (

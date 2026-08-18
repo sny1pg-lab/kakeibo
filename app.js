@@ -8,6 +8,7 @@
   var MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP];
   var DEFAULT_PARTIES = ["\u751F\u6D3B\u8CBB", "\u304A\u3044\u306C", "\u5A2F\u697D\u8CBB", "\u5BB6\u5177\u5BB6\u96FB", "\u305D\u306E\u4ED6", "KITI", "\u30A6\u30A7\u30EB\u30DC\u30F3"];
   var DEFAULT_METHODS = ["\u697D\u5929\u30AB\u30FC\u30C9", "\u697D\u5929\u30DA\u30A4", "\u697D\u5929\u30AD\u30E3\u30C3\u30B7\u30E5", "\u697D\u5929\u9280\u884C", "PayPay\u30AB\u30FC\u30C9", "PayPay\u6B8B\u9AD8", "PASMO", "\u30B9\u30BF\u30D0\u30AB\u30FC\u30C9", "NL\u30AB\u30FC\u30C9", "\u73FE\u91D1", "\u305D\u306E\u4ED6"];
+  var HIST_FIXED = "group:\u56FA\u5B9A\u8CBB";
   function isMaster(c) {
     return MASTER_GROUPS.indexOf(c.group) >= 0;
   }
@@ -465,6 +466,13 @@
       }
       return "";
     }
+    const fixedCatIds = useMemo(() => {
+      const m = {};
+      budgetCats.forEach((c) => {
+        if (c.group === "\u56FA\u5B9A\u8CBB") m[c.id] = true;
+      });
+      return m;
+    }, [budgetCats]);
     const catIndex = useMemo(() => {
       const m = {};
       budgetCats.forEach((c, i) => {
@@ -951,25 +959,36 @@
     const matchesHistCat = useCallback((row) => {
       if (histCat === null) return true;
       if (histCat === "transfer") return row.kind === "transfer";
+      if (histCat === HIST_FIXED) return row.kind !== "transfer" && !!fixedCatIds[row.catId];
       return row.kind !== "transfer" && row.catId === histCat;
-    }, [histCat]);
+    }, [histCat, fixedCatIds]);
     const histMonthTotals = useMemo(() => {
       const arr = Array(12).fill(0);
       yearEntries.forEach((e) => {
-        if (histCat !== null && (histCat === "transfer" || e.categoryId !== histCat)) return;
+        if (histCat === "transfer") return;
+        if (histCat === HIST_FIXED) {
+          if (!fixedCatIds[e.categoryId]) return;
+        } else if (histCat !== null && e.categoryId !== histCat) {
+          return;
+        }
         arr[monthIdxOf(e.date)] += signedAmount(e);
       });
       return arr;
-    }, [yearEntries, histCat]);
+    }, [yearEntries, histCat, fixedCatIds]);
     const histCatCounts = useMemo(() => {
       const m = { transfer: 0 };
+      m[HIST_FIXED] = 0;
       allRows.forEach((r) => {
         if (histMonth !== null && histMonth !== "pending" && monthIdxOf(r.date) !== histMonth) return;
-        if (r.kind === "transfer") m.transfer += 1;
-        else m[r.catId] = (m[r.catId] || 0) + 1;
+        if (r.kind === "transfer") {
+          m.transfer += 1;
+          return;
+        }
+        m[r.catId] = (m[r.catId] || 0) + 1;
+        if (fixedCatIds[r.catId]) m[HIST_FIXED] += 1;
       });
       return m;
-    }, [allRows, histMonth]);
+    }, [allRows, histMonth, fixedCatIds]);
     const histRows = allRows.filter((e) => histMonth === null || histMonth === "pending" || monthIdxOf(e.date) === histMonth).filter(matchesHistCat);
     const histTotal = histRows.filter((e) => e.kind !== "transfer").reduce((a, e) => a + signedAmount(e), 0);
     const historyByDate = useMemo(() => {
@@ -1065,7 +1084,7 @@
       };
     }).filter((p) => p.count > 0).sort((a, b) => b.unsettled - a.unsettled), [partyNames, scopedSettlements]);
     const maxParty = Math.max(...partySummary.map((p) => p.unsettled + p.settled), 1);
-    const dPartyItems = detail && detail.type === "party" ? scopedSettlements.filter((t) => t.party === detail.key).sort((a, b) => (a.date || "").localeCompare(b.date || "")) : [];
+    const dPartyItems = detail && detail.type === "party" ? scopedSettlements.filter((t) => t.party === detail.key).sort((a, b) => (sortAsc ? 1 : -1) * (a.date || "").localeCompare(b.date || "")) : [];
     const hasData = categories.length > 0 || entries.length > 0 || transfers.length > 0 || settlements.length > 0;
     const entryCat = entryTarget ? catById(entryTarget.catId) : null;
     const TABS = [
@@ -1098,7 +1117,7 @@
       },
       /* @__PURE__ */ React.createElement("span", null, l),
       /* @__PURE__ */ React.createElement("b", null, histMonthTotals[i] === 0 ? "\u2014" : histMonthTotals[i].toLocaleString("ja-JP"))
-    ))), histMonth !== "pending" && /* @__PURE__ */ React.createElement("div", { className: "kb-chips", style: { marginTop: 8, marginBottom: 0 } }, /* @__PURE__ */ React.createElement("button", { className: `kb-tagchip ${histCat === null ? "on" : ""}`, onClick: () => setHistCat(null) }, "\u3059\u3079\u3066"), budgetCats.map((c) => {
+    ))), histMonth !== "pending" && /* @__PURE__ */ React.createElement("div", { className: "kb-chips", style: { marginTop: 8, marginBottom: 0 } }, /* @__PURE__ */ React.createElement("button", { className: `kb-tagchip ${histCat === null ? "on" : ""}`, onClick: () => setHistCat(null) }, "\u3059\u3079\u3066"), budgetCats.filter((c) => c.group !== "\u56FA\u5B9A\u8CBB").map((c) => {
       const n = histCatCounts[c.id] || 0;
       return /* @__PURE__ */ React.createElement(
         "button",
@@ -1110,7 +1129,15 @@
         c.name,
         n > 0 ? ` ${n}` : ""
       );
-    }), /* @__PURE__ */ React.createElement(
+    }), budgetCats.some((c) => c.group === "\u56FA\u5B9A\u8CBB") && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: `kb-tagchip ${histCat === HIST_FIXED ? "on" : ""} ${!histCatCounts[HIST_FIXED] ? "empty" : ""}`,
+        onClick: () => setHistCat(histCat === HIST_FIXED ? null : HIST_FIXED)
+      },
+      "\u56FA\u5B9A\u8CBB",
+      histCatCounts[HIST_FIXED] ? ` ${histCatCounts[HIST_FIXED]}` : ""
+    ), /* @__PURE__ */ React.createElement(
       "button",
       {
         className: `kb-tagchip ${histCat === "transfer" ? "on" : ""} ${!histCatCounts.transfer ? "empty" : ""}`,
@@ -1161,7 +1188,7 @@
       },
       /* @__PURE__ */ React.createElement("span", null, l),
       /* @__PURE__ */ React.createElement("b", null, tkMonthTotals[i] === 0 ? "\u2014" : tkMonthTotals[i].toLocaleString("ja-JP"))
-    ))), partySummary.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 12 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, tkMonth === null ? "\u7ACB\u66FF\u306E\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093" : `${MONTH_LABELS[tkMonth]}\u306E\u7ACB\u66FF\u306F\u3042\u308A\u307E\u305B\u3093`), tkMonth === null ? "\u53F3\u4E0B\u306E\u30DC\u30BF\u30F3\u304B\u3089\u8A18\u9332\u3057\u3066\u304F\u3060\u3055\u3044\u3002" : "\u4E0A\u306E\u5E74\u9593\u3092\u62BC\u3059\u3068\u5168\u671F\u9593\u306B\u623B\u308A\u307E\u3059\u3002")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, tkMonth === null ? "\u533A\u5206\u3054\u3068\u306E\u672A\u7CBE\u7B97" : `${MONTH_LABELS[tkMonth]}\u306E\u533A\u5206\u3054\u3068\u306E\u672A\u7CBE\u7B97`), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, partySummary.map((p) => /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: p.party, onClick: () => openDetail("party", p.party) }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-partytop" }, /* @__PURE__ */ React.createElement("span", { className: "kb-rowtitle" }, p.party), /* @__PURE__ */ React.createElement("span", { className: "kb-partyamt", style: { color: p.unsettled > 0 ? "var(--red)" : "var(--sub)" } }, yen(p.unsettled))), /* @__PURE__ */ React.createElement("div", { className: "kb-stackbar" }, /* @__PURE__ */ React.createElement("span", { className: "all", style: { width: `${(p.unsettled + p.settled) / maxParty * 100}%` } }), /* @__PURE__ */ React.createElement("span", { className: "un", style: { width: `${p.unsettled / maxParty * 100}%` } })), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, p.items.filter((t) => !t.settled).length, "\u4EF6\u672A\u7CBE\u7B97", p.settled > 0 ? `\u30FB\u7CBE\u7B97\u6E08\u307F ${yen(p.settled)}` : "")), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" }))))))), tab === "settle" && !tkFormOpen && !detail && /* @__PURE__ */ React.createElement("button", { className: "kb-fab", onClick: openTkNew, "aria-label": "\u7ACB\u66FF\u3092\u8A18\u9332" }, /* @__PURE__ */ React.createElement(Plus, { size: 26 })), detail && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: closeDetail }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", ref: detailSheetRef, onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, detail.type === "party" ? `\u7ACB\u66FF\u30FB${detail.key}${tkMonth === null ? "" : ` ${MONTH_LABELS[tkMonth]}`}` : `${detail.type === "group" ? detail.key : dCats[0] ? dCats[0].name : ""}${dTag ? `\u30FB${dTag}` : ""}`, detail.type !== "party" && /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-period" }, anaScope === "month" ? ` ${MONTH_LABELS[anaMonth]}` : dMonth !== null ? ` ${MONTH_LABELS[dMonth]}` : " \u5E74\u9593")), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: closeDetail, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), detail.type === "party" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total" }, /* @__PURE__ */ React.createElement("span", null, "\u672A\u7CBE\u7B97 ", yen(dPartyItems.filter((t) => !t.settled).reduce((a, t) => a + t.amount, 0))), /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, dPartyItems.length, "\u4EF6")), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, dPartyItems.map((t) => /* @__PURE__ */ React.createElement("div", { className: `kb-row ${t.settled ? "kb-settled" : ""}`, key: t.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-date" }, t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}` : "\u2014"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain", onClick: () => {
+    ))), partySummary.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 12 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, tkMonth === null ? "\u7ACB\u66FF\u306E\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093" : `${MONTH_LABELS[tkMonth]}\u306E\u7ACB\u66FF\u306F\u3042\u308A\u307E\u305B\u3093`), tkMonth === null ? "\u53F3\u4E0B\u306E\u30DC\u30BF\u30F3\u304B\u3089\u8A18\u9332\u3057\u3066\u304F\u3060\u3055\u3044\u3002" : "\u4E0A\u306E\u5E74\u9593\u3092\u62BC\u3059\u3068\u5168\u671F\u9593\u306B\u623B\u308A\u307E\u3059\u3002")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, tkMonth === null ? "\u533A\u5206\u3054\u3068\u306E\u672A\u7CBE\u7B97" : `${MONTH_LABELS[tkMonth]}\u306E\u533A\u5206\u3054\u3068\u306E\u672A\u7CBE\u7B97`), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, partySummary.map((p) => /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: p.party, onClick: () => openDetail("party", p.party) }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-partytop" }, /* @__PURE__ */ React.createElement("span", { className: "kb-rowtitle" }, p.party), /* @__PURE__ */ React.createElement("span", { className: "kb-partyamt", style: { color: p.unsettled > 0 ? "var(--red)" : "var(--sub)" } }, yen(p.unsettled))), /* @__PURE__ */ React.createElement("div", { className: "kb-stackbar" }, /* @__PURE__ */ React.createElement("span", { className: "all", style: { width: `${(p.unsettled + p.settled) / maxParty * 100}%` } }), /* @__PURE__ */ React.createElement("span", { className: "un", style: { width: `${p.unsettled / maxParty * 100}%` } })), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, p.items.filter((t) => !t.settled).length, "\u4EF6\u672A\u7CBE\u7B97", p.settled > 0 ? `\u30FB\u7CBE\u7B97\u6E08\u307F ${yen(p.settled)}` : "")), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" }))))))), tab === "settle" && !tkFormOpen && !detail && /* @__PURE__ */ React.createElement("button", { className: "kb-fab", onClick: openTkNew, "aria-label": "\u7ACB\u66FF\u3092\u8A18\u9332" }, /* @__PURE__ */ React.createElement(Plus, { size: 26 })), detail && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: closeDetail }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", ref: detailSheetRef, onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, detail.type === "party" ? `\u7ACB\u66FF\u30FB${detail.key}${tkMonth === null ? "" : ` ${MONTH_LABELS[tkMonth]}`}` : `${detail.type === "group" ? detail.key : dCats[0] ? dCats[0].name : ""}${dTag ? `\u30FB${dTag}` : ""}`, detail.type !== "party" && /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-period" }, anaScope === "month" ? ` ${MONTH_LABELS[anaMonth]}` : dMonth !== null ? ` ${MONTH_LABELS[dMonth]}` : " \u5E74\u9593")), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: closeDetail, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), detail.type === "party" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total" }, /* @__PURE__ */ React.createElement("span", null, "\u672A\u7CBE\u7B97 ", yen(dPartyItems.filter((t) => !t.settled).reduce((a, t) => a + t.amount, 0))), /* @__PURE__ */ React.createElement("div", { className: "kb-sortwrap" }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, dPartyItems.length, "\u4EF6"), /* @__PURE__ */ React.createElement(SortButton, { asc: sortAsc, onToggle: () => setSortAsc((v) => !v) }))), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, dPartyItems.map((t) => /* @__PURE__ */ React.createElement("div", { className: `kb-row ${t.settled ? "kb-settled" : ""}`, key: t.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-date" }, t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}` : "\u2014"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain", onClick: () => {
       leaveDetail();
       openTkEdit(t);
     }, style: { cursor: "pointer" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, t.memo)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: { color: t.pending ? "var(--pending)" : t.settled ? "var(--sub)" : "var(--red)" } }, yen(t.amount)), /* @__PURE__ */ React.createElement(
