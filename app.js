@@ -395,7 +395,7 @@
       if (needsSetup || loading || loadError || refreshing) return;
       if (sync.pending > 0 || sync.sending) return;
       const t = setTimeout(() => {
-        KakeiboAPI.writeSnapshot({ categories, entries, transfers, settlements });
+        KakeiboAPI.writeSnapshot({ categories, entries, transfers, settlements, budgets });
       }, 800);
       return () => clearTimeout(t);
     }, [
@@ -403,6 +403,7 @@
       entries,
       transfers,
       settlements,
+      budgets,
       sync.pending,
       sync.sending,
       needsSetup,
@@ -911,6 +912,21 @@
         };
         setCategories((p) => p.map((c) => c.id === catEditId ? updated : c));
         saveCategory(updated);
+        if (base && base.group !== fGroup) {
+          const moved = budgets.filter((b) => b.target === catEditId).map((b) => {
+            if (fGroup === "\u4E88\u5B9A\u8CBB") {
+              return Object.assign({}, b, { annual: b.annual || b.monthly * 12, monthly: 0 });
+            }
+            if (fGroup === "\u56FA\u5B9A\u8CBB") {
+              return Object.assign({}, b, { monthly: b.monthly || Math.round(b.annual / 12), annual: 0 });
+            }
+            return Object.assign({}, b, { monthly: 0, annual: 0 });
+          });
+          if (moved.length) {
+            setBudgets((p) => p.map((b) => moved.find((m) => m.id === b.id) || b));
+            moved.forEach((m) => KakeiboAPI.save("budgets", m));
+          }
+        }
       }
       setCatFormOpen(false);
     }
@@ -941,6 +957,8 @@
       }
       setCategories((p) => p.filter((c) => c.id !== id));
       KakeiboAPI.remove("categories", id);
+      budgets.filter((b) => b.target === id).forEach((b) => KakeiboAPI.remove("budgets", b.id));
+      setBudgets((p) => p.filter((b) => b.target !== id));
       setCatDeleteId(null);
     }
     function openTkNew() {

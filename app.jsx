@@ -593,10 +593,10 @@ function KakeiboApp() {
     if (needsSetup || loading || loadError || refreshing) return;
     if (sync.pending > 0 || sync.sending) return;
     const t = setTimeout(() => {
-      KakeiboAPI.writeSnapshot({ categories, entries, transfers, settlements });
+      KakeiboAPI.writeSnapshot({ categories, entries, transfers, settlements, budgets });
     }, 800);
     return () => clearTimeout(t);
-  }, [categories, entries, transfers, settlements,
+  }, [categories, entries, transfers, settlements, budgets,
       sync.pending, sync.sending, needsSetup, loading, loadError, refreshing]);
 
   useEffect(() => KakeiboAPI.subscribe(setSync), []);
@@ -1098,6 +1098,28 @@ function KakeiboApp() {
       };
       setCategories((p) => p.map((c) => (c.id === catEditId ? updated : c)));
       saveCategory(updated);
+
+      // グループを変えると、予算のマスターが月額と年額で入れ替わる。
+      // 金額を移し替えないと、入れたはずの予算が0になったように見える。
+      // 年をまたいで持っているので、その年だけでなく全部の年を直す。
+      if (base && base.group !== fGroup) {
+        const moved = budgets
+          .filter((b) => b.target === catEditId)
+          .map((b) => {
+            if (fGroup === "予定費") {
+              return Object.assign({}, b, { annual: b.annual || b.monthly * 12, monthly: 0 });
+            }
+            if (fGroup === "固定費") {
+              return Object.assign({}, b, { monthly: b.monthly || Math.round(b.annual / 12), annual: 0 });
+            }
+            // 自由費は残りとして計算するので、金額は持たせない
+            return Object.assign({}, b, { monthly: 0, annual: 0 });
+          });
+        if (moved.length) {
+          setBudgets((p) => p.map((b) => moved.find((m) => m.id === b.id) || b));
+          moved.forEach((m) => KakeiboAPI.save("budgets", m));
+        }
+      }
     }
     setCatFormOpen(false);
   }
@@ -1135,6 +1157,9 @@ function KakeiboApp() {
     }
     setCategories((p) => p.filter((c) => c.id !== id));
     KakeiboAPI.remove("categories", id);
+    // 予算の行も一緒に消す。残すとシートに参照先の無い行がたまる
+    budgets.filter((b) => b.target === id).forEach((b) => KakeiboAPI.remove("budgets", b.id));
+    setBudgets((p) => p.filter((b) => b.target !== id));
     setCatDeleteId(null);
   }
 
