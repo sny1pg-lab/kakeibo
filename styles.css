@@ -226,6 +226,12 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 .kb-sortbtn:active { background: var(--bg); }
 
 /* 予算タブ */
+/* 枠線の有無や書体で1〜2pxずれるので、高さを決めて揃える。
+   行の高さを書体に任せると環境で変わるため、2行ぶんを明示して固定する。
+   box-sizing は border-box なので、枠線ぶんも含んだ値になる */
+.kb-bgrow { min-height: 67px; }
+.kb-bgrow .kb-rowtitle { line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kb-bgrow .kb-rowsub { line-height: 16px; margin-top: 2px; }
 .kb-bgrow:disabled { cursor: default; }
 /* 右端は上の行の金額と揃える。行は 14px の余白のあとに
    11px の隙間と 17px の矢印が入るので、その分だけ広く取る */

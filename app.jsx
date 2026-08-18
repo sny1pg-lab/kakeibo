@@ -327,9 +327,8 @@ function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
     <button className="kb-row kb-bgrow" onClick={onClick} disabled={!onClick}>
       <div className="kb-rowmain">
         <div className="kb-rowtitle" style={strong ? { fontWeight: 700 } : undefined}>{label}</div>
-        {(method || memo) && (
-          <div className="kb-rowsub">{[method, memo].filter(Boolean).join("　")}</div>
-        )}
+        {/* 引き落とし先もメモも無い行にも同じ高さを持たせて、一覧の行を揃える */}
+        <div className="kb-rowsub">{[method, memo].filter(Boolean).join("　") || "\u00A0"}</div>
       </div>
       <span className="kb-amount" style={derived ? { color: "var(--pending)" } : undefined}>
         {yenExact(amount)}
