@@ -7,7 +7,7 @@
  * 明細は参考実装ではカテゴリの中に入れ子で持っていたが、
  * スプレッドシートは1明細1行なので、categoryIdを持つ平らな配列にしている。
  */
-const { useState, useEffect, useRef, useMemo, useCallback } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
 
 /* ------------------------------------------------------------------ */
 /* 定義                                                                */
@@ -75,7 +75,7 @@ function SortButton({ asc, onToggle }) {
   );
 }
 
-/** 「金額が確定している」のような入り切りの行。 */
+/** 「確定」のような入り切りの行。 */
 function CheckRow({ checked, onChange, children }) {
   return (
     <button type="button" className={`kb-check ${checked ? "on" : ""}`} onClick={() => onChange(!checked)}>
@@ -196,6 +196,10 @@ function KakeiboApp() {
   const [detail, setDetail] = useState(null);
   const [dMonth, setDMonth] = useState(null);
   const [dTag, setDTag] = useState(null);
+  // 内訳から編集シートへ移ったとき、戻り先として内訳の状態を覚えておく
+  const [detailBack, setDetailBack] = useState(null);
+  const detailSheetRef = useRef(null);
+  const detailScrollRef = useRef(null);
 
   const [manageOpen, setManageOpen] = useState(false);
 
@@ -321,8 +325,34 @@ function KakeiboApp() {
     return `${year}-${pad2(m)}-${pad2(d)}`;
   }
 
-  function openDetail(type, key) { setDetail({ type, key }); setDMonth(null); setDTag(null); }
-  function closeDetail() { setDetail(null); setDMonth(null); setDTag(null); }
+  function openDetail(type, key) { setDetail({ type, key }); setDMonth(null); setDTag(null); setDetailBack(null); }
+  function closeDetail() { setDetail(null); setDMonth(null); setDTag(null); setDetailBack(null); }
+
+  /**
+   * 内訳の一覧から編集シートへ移る。内訳はいったん閉じるが、
+   * 編集を終えたときに同じ内訳の同じ位置へ戻れるよう、状態を覚えておく。
+   */
+  function leaveDetail() {
+    const el = detailSheetRef.current;
+    setDetailBack({ detail, dMonth, dTag, scrollTop: el ? el.scrollTop : 0 });
+    setDetail(null);
+  }
+  /** 覚えておいた内訳へ戻す。内訳から来ていなければ何もしない。 */
+  function backToDetail() {
+    if (!detailBack) return;
+    setDetail(detailBack.detail);
+    setDMonth(detailBack.dMonth);
+    setDTag(detailBack.dTag);
+    detailScrollRef.current = detailBack.scrollTop;
+    setDetailBack(null);
+  }
+
+  // 内訳へ戻したときは、離れる前まで見ていた位置に合わせる
+  useLayoutEffect(() => {
+    if (detailScrollRef.current === null) return;
+    if (detail && detailSheetRef.current) detailSheetRef.current.scrollTop = detailScrollRef.current;
+    detailScrollRef.current = null;
+  }, [detail]);
 
   function openEntryNew(cat) {
     setEntryTarget({ catId: cat.id, entryId: null });
@@ -346,7 +376,7 @@ function KakeiboApp() {
     setEnPending(!!entry.pending);
     setEnError("");
   }
-  function closeEntry() { setEntryTarget(null); setEnError(""); }
+  function closeEntry() { setEntryTarget(null); setEnError(""); backToDetail(); }
 
   function submitEntry() {
     const amount = Number(enAmount);
@@ -488,6 +518,7 @@ function KakeiboApp() {
     setTkAmount(String(t.amount ?? "")); setTkPending(!!t.pending); setTkError("");
     setTkFormOpen(true);
   }
+  function closeTk() { setTkFormOpen(false); setTkEditId(null); setTkError(""); backToDetail(); }
   function submitTk() {
     const memo = tkMemo.trim();
     const amount = Number(tkAmount);
@@ -505,12 +536,12 @@ function KakeiboApp() {
       saveSettlement(created);
       flash(`${tkParty}　${yen(amount)} を記録しました`);
     }
-    setTkEditId(null); setTkFormOpen(false);
+    closeTk();
   }
   function deleteSettlement(id) {
     setSettlements((p) => p.filter((s) => s.id !== id));
     KakeiboAPI.remove("settlements", id);
-    setTkFormOpen(false); setTkEditId(null);
+    closeTk();
     flash("立替の記録を削除しました");
   }
   function toggleSettled(item) {
@@ -1177,7 +1208,7 @@ function KakeiboApp() {
         {/* 分析・立替の明細シート */}
         {detail && (
           <div className="kb-sheet-backdrop" onClick={closeDetail}>
-            <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
+            <div className="kb-sheet" ref={detailSheetRef} onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">
                   {detail.type === "party"
@@ -1204,7 +1235,7 @@ function KakeiboApp() {
                         <span className="kb-detail-date">
                           {t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}` : "—"}
                         </span>
-                        <div className="kb-rowmain" onClick={() => { closeDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }}>
+                        <div className="kb-rowmain" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }}>
                           <div className="kb-rowtitle">{t.memo}</div>
                         </div>
                         <span className="kb-amount" style={{ color: t.pending ? "var(--pending)" : t.settled ? "var(--sub)" : "var(--red)" }}>{yen(t.amount)}</span>
@@ -1271,7 +1302,7 @@ function KakeiboApp() {
                   ) : (
                     <div className="kb-card" style={{ background: "#FAFAFB" }}>
                       {dEntries.map((e) => (
-                        <button className="kb-row" key={e.id} onClick={() => { const c = catById(e.catId); closeDetail(); openEntryEdit(c, e); }}>
+                        <button className="kb-row" key={e.id} onClick={() => { const c = catById(e.catId); leaveDetail(); openEntryEdit(c, e); }}>
                           <span className="kb-detail-date">
                             {e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}` : "—"}
                           </span>
@@ -1350,7 +1381,7 @@ function KakeiboApp() {
                 </select>
               </div>
               <CheckRow checked={!enPending} onChange={(v) => setEnPending(!v)}>
-                金額が確定している（カードの明細に載った）
+                確定
               </CheckRow>
               {enError && <div className="kb-err">{enError}</div>}
               <button className="kb-btn" onClick={submitEntry}>
@@ -1376,11 +1407,11 @@ function KakeiboApp() {
 
         {/* 立替の入力・編集シート */}
         {tkFormOpen && (
-          <div className="kb-sheet-backdrop" onClick={() => { setTkFormOpen(false); setTkEditId(null); }}>
+          <div className="kb-sheet-backdrop" onClick={closeTk}>
             <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">{tkEditId ? "立替を編集" : "立替を記録"}</span>
-                <button className="kb-close" onClick={() => { setTkFormOpen(false); setTkEditId(null); }} aria-label="閉じる"><X size={19} /></button>
+                <button className="kb-close" onClick={closeTk} aria-label="閉じる"><X size={19} /></button>
               </div>
               <div className="kb-field">
                 <label className="kb-label">金額（円）</label>
@@ -1401,7 +1432,7 @@ function KakeiboApp() {
                 <input className="kb-input" value={tkMemo} onChange={(ev) => setTkMemo(ev.target.value)} placeholder="無印良品" />
               </div>
               <CheckRow checked={!tkPending} onChange={(v) => setTkPending(!v)}>
-                金額が確定している（カードの明細に載った）
+                確定
               </CheckRow>
               {tkError && <div className="kb-err">{tkError}</div>}
               <button className="kb-btn" onClick={submitTk}>{tkEditId ? "保存する" : "記録する"}</button>
@@ -1449,7 +1480,7 @@ function KakeiboApp() {
                 <input className="kb-input" value={trMemo} onChange={(ev) => setTrMemo(ev.target.value)} placeholder="PASMOチャージ" />
               </div>
               <CheckRow checked={!trPending} onChange={(v) => setTrPending(!v)}>
-                金額が確定している（カードの明細に載った）
+                確定
               </CheckRow>
               {trError && <div className="kb-err">{trError}</div>}
               <button className="kb-btn" onClick={submitTr}>{trEditId ? "保存する" : "記録する"}</button>
