@@ -241,6 +241,18 @@
             if (api.supports('settlements', 'tag')) rec.tag = s.tag || '';
             if (api.supports('settlements', 'method')) rec.method = s.method || '';
             return rec;
+          }),
+          // 年ごとの予算。シートを増やす前は空で返る
+          budgets: (d.budgets || []).map(function (b) {
+            return {
+              id: b.id,
+              year: Number(b.year) || 0,
+              target: b.target || '',
+              monthly: Number(b.monthly) || 0,
+              annual: Number(b.annual) || 0,
+              method: b.method || '',
+              memo: b.memo || ''
+            };
           })
         };
       });
@@ -254,6 +266,14 @@
     supports: function (table, column) {
       if (!serverColumns || !serverColumns[table]) return false;
       return serverColumns[table].indexOf(column) >= 0;
+    },
+
+    /**
+     * そのテーブルをサーバが扱えるか。
+     * シートを1枚増やしたときに、貼り替え前は画面ごと出さないために使う。
+     */
+    supportsTable: function (table) {
+      return !!(serverColumns && serverColumns[table]);
     },
 
     /** 1件の追加・更新をキューに積む。すぐ返る。 */

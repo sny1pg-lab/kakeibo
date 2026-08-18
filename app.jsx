@@ -33,6 +33,9 @@ const DEFAULT_METHODS = ["楽天カード", "楽天ペイ", "楽天キャッシ�
 // カテゴリのidと混ざらないよう、idには使われない形にしてある。
 const HIST_FIXED = "group:固定費";
 
+// budgets シートで収入の枠を表す target。カテゴリのidとは混ざらない形にしてある
+const INCOME_TARGET = "income";
+
 function isMaster(c) { return MASTER_GROUPS.indexOf(c.group) >= 0; }
 function defaultsOf(group) { return group === PARTY_GROUP ? DEFAULT_PARTIES : DEFAULT_METHODS; }
 
@@ -84,6 +87,7 @@ const Wallet = (p) => <Svg {...p}><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4
 const Settings = (p) => <Svg {...p}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></Svg>;
 const CalendarPlus = (p) => <Svg {...p}><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="M10 16h4" /><path d="M12 14v4" /></Svg>;
 const ArrowLeftRight = (p) => <Svg {...p}><path d="m16 3 4 4-4 4" /><path d="M20 7H4" /><path d="m8 21-4-4 4-4" /><path d="M4 17h16" /></Svg>;
+const Target = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></Svg>;
 const CircleAlert = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></Svg>;
 
 /** 明細の並び順を入れ替えるボタン。 */
@@ -154,11 +158,18 @@ function signedAmount(e) {
   const a = Math.abs(Number(e.amount) || 0);
   return isIncome(e) ? -a : a;
 }
-function annualBudgetOf(c) {
-  return c.group === "予定費" ? Number(c.annualBudget) || 0 : (Number(c.monthlyBudget) || 0) * 12;
-}
-function monthBudgetOf(c) {
-  return c.group === "予定費" ? (Number(c.annualBudget) || 0) / 12 : Number(c.monthlyBudget) || 0;
+/**
+ * 予算の金額。年額をマスターにして、月額は12で割って出す。
+ * 割り切れないときだけ小数1桁まで見せる。
+ * 先に月額を丸めてから12倍すると年額とずれるので、丸めるのは表示のときだけにする。
+ */
+function yenExact(n) {
+  const v = Number(n) || 0;
+  const r = Math.round(v * 10) / 10;
+  // toFixed は文字列を返すので、そこから toLocaleString しても桁区切りが入らない。
+  // 数値のまま桁数を指定して整える。
+  const opts = Number.isInteger(r) ? {} : { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+  return `¥${r.toLocaleString("ja-JP", opts)}`;
 }
 function colorOf(idx) {
   return PALETTE[(idx >= 0 ? idx : 0) % PALETTE.length];
@@ -300,6 +311,129 @@ function SetupScreen({ onSave }) {
   );
 }
 
+/**
+ * 予算タブ。手書きの一覧表と同じ並びで見せる。
+ *
+ * 上が月の部（固定費の各件・予定費・自由費）、下が年の部（予定費の各件）。
+ * 収入を起点にして、固定費と予定費を引いた残りが自由費になるので、
+ * 月の合計は必ず収入と一致する。
+ */
+function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
+  const fixed = cats.filter((c) => c.group === "固定費");
+  const planned = cats.filter((c) => c.group === "予定費");
+  const free = cats.filter((c) => c.group === "自由費");
+
+  const Row = ({ label, amount, method, memo, onClick, derived, strong }) => (
+    <button className="kb-row kb-bgrow" onClick={onClick} disabled={!onClick}>
+      <div className="kb-rowmain">
+        <div className="kb-rowtitle" style={strong ? { fontWeight: 700 } : undefined}>{label}</div>
+        {(method || memo) && (
+          <div className="kb-rowsub">{[method, memo].filter(Boolean).join("　")}</div>
+        )}
+      </div>
+      <span className="kb-amount" style={derived ? { color: "var(--pending)" } : undefined}>
+        {yenExact(amount)}
+      </span>
+      {onClick ? <ChevronRight size={17} className="kb-chev" /> : <span style={{ width: 17 }} />}
+    </button>
+  );
+
+  return (
+    <>
+      <div className="kb-section-label">収入（月）</div>
+      <div className="kb-card">
+        <Row
+          label="毎月の収入"
+          amount={plan.income.monthly}
+          method={plan.income.method}
+          memo={plan.income.memo}
+          strong
+          onClick={() => onEdit({ target: INCOME_TARGET, label: "毎月の収入", kind: "income" })}
+        />
+      </div>
+      <div className="kb-note">
+        この金額を固定費と予定費に割り振り、残りが自由費になります。年間では {yenExact(plan.income.annual)} です。
+      </div>
+
+      <div className="kb-section-label">月</div>
+      <div className="kb-card">
+        {fixed.map((c) => (
+          <Row
+            key={c.id}
+            label={c.name}
+            amount={plan.per[c.id] ? plan.per[c.id].monthly : 0}
+            method={plan.per[c.id] ? plan.per[c.id].method : ""}
+            memo={plan.per[c.id] ? plan.per[c.id].memo : ""}
+            onClick={() => onEdit({ target: c.id, label: c.name, kind: "monthly" })}
+          />
+        ))}
+        {free.map((c) => (
+          <Row
+            key={c.id}
+            label={c.name}
+            amount={plan.per[c.id] ? plan.per[c.id].monthly : 0}
+            memo="収入から固定費と予定費を引いた残り"
+            derived
+          />
+        ))}
+        {planned.length > 0 && (
+          <Row
+            label="予定費"
+            amount={plan.plannedAnnual / 12}
+            memo="下の年間予算の合計を12で割った額"
+            derived
+          />
+        )}
+      </div>
+
+      <div className="kb-card" style={{ marginTop: 10 }}>
+        <div className="kb-bgtotal">
+          <span>合計（月）</span>
+          <b>{yenExact(plan.income.monthly)}</b>
+        </div>
+        <div className="kb-bgtotal sub">
+          <span>×12</span>
+          <b>{yenExact(plan.income.annual)}</b>
+        </div>
+      </div>
+
+      <div className="kb-section-label">年（予定費）</div>
+      <div className="kb-card">
+        {planned.length === 0 ? (
+          <div className="kb-empty">予定費のカテゴリがありません</div>
+        ) : (
+          planned.map((c) => (
+            <Row
+              key={c.id}
+              label={c.name}
+              amount={plan.per[c.id] ? plan.per[c.id].annual : 0}
+              method={plan.per[c.id] ? plan.per[c.id].method : ""}
+              memo={plan.per[c.id] ? plan.per[c.id].memo : ""}
+              onClick={() => onEdit({ target: c.id, label: c.name, kind: "annual" })}
+            />
+          ))
+        )}
+      </div>
+
+      <div className="kb-card" style={{ marginTop: 10 }}>
+        <div className="kb-bgtotal">
+          <span>合計（年）</span>
+          <b>{yenExact(plan.plannedAnnual)}</b>
+        </div>
+        <div className="kb-bgtotal sub">
+          <span>÷12</span>
+          <b>{yenExact(plan.plannedAnnual / 12)}</b>
+        </div>
+      </div>
+
+      <div className="kb-note">
+        {year}年の予算です。上の年を切り替えると、その年の予算を別に持てます。
+        オレンジの金額は計算で出たものなので、直接は変えられません。
+      </div>
+    </>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* 本体                                                                */
 /* ------------------------------------------------------------------ */
@@ -318,6 +452,7 @@ function KakeiboApp() {
   const [entries, setEntries] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [settlements, setSettlements] = useState([]);
+  const [budgets, setBudgets] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -405,6 +540,7 @@ function KakeiboApp() {
     setEntries(d.entries || []);
     setTransfers(d.transfers || []);
     setSettlements(d.settlements || []);
+    setBudgets(d.budgets || []);
   }, []);
 
   /**
@@ -475,6 +611,146 @@ function KakeiboApp() {
   const yearEntries = useMemo(() => entries.filter((e) => yearOf(e.date) === year), [entries, year]);
   const yearTransfers = useMemo(() => transfers.filter((t) => yearOf(t.date) === year), [transfers, year]);
   const yearSettlements = useMemo(() => settlements.filter((s) => yearOf(s.date) === year), [settlements, year]);
+
+  /* ---- 予算の編集 ---- */
+
+  const [bgTarget, setBgTarget] = useState(null); // { target, label, kind } kind: monthly|annual|income
+  const [bgAmount, setBgAmount] = useState("");
+  const [bgMethod, setBgMethod] = useState("");
+  const [bgMemo, setBgMemo] = useState("");
+  const [bgError, setBgError] = useState("");
+
+  /* ---- 年ごとの予算 ---- */
+
+  /**
+   * その年の予算を組み立てる。
+   *
+   * 収入の月額を起点にして、固定費と予定費を引いた残りが自由費になる。
+   * 年額をマスターにするので、収入年額 = 固定費 + 予定費 + 自由費 がぴったり合う。
+   *
+   * budgets シートが無い、またはその年の行が1件も無いときは、
+   * カテゴリが持っている従来の予算をそのまま使う。貼り替え前でも画面が壊れないようにするため。
+   */
+  const budgetPlan = useMemo(() => {
+    const rows = budgets.filter((b) => b.year === year);
+    const byTarget = {};
+    rows.forEach((b) => { byTarget[b.target] = b; });
+    const live = rows.length > 0;
+
+    const cats = categories.filter((c) => !isMaster(c));
+    const per = {};
+
+    let fixedAnnual = 0;
+    let plannedAnnual = 0;
+    cats.forEach((c) => {
+      const row = byTarget[c.id];
+      if (c.group === "固定費") {
+        const monthly = live ? (row ? row.monthly : 0) : (Number(c.monthlyBudget) || 0);
+        per[c.id] = { monthly, annual: monthly * 12, method: row ? row.method : "", memo: row ? row.memo : "" };
+        fixedAnnual += monthly * 12;
+      } else if (c.group === "予定費") {
+        const annual = live ? (row ? row.annual : 0) : (Number(c.annualBudget) || 0);
+        per[c.id] = { monthly: annual / 12, annual, method: row ? row.method : "", memo: row ? row.memo : "" };
+        plannedAnnual += annual;
+      }
+    });
+
+    // 収入。行が無いうちは、固定費と予定費と従来の自由費を足した額を初期値として見せる
+    const legacyFreeAnnual = cats
+      .filter((c) => c.group === "自由費")
+      .reduce((a, c) => a + (Number(c.monthlyBudget) || 0) * 12, 0);
+    const incomeRow = byTarget[INCOME_TARGET];
+    const incomeMonthly = live && incomeRow
+      ? incomeRow.monthly
+      : (fixedAnnual + plannedAnnual + legacyFreeAnnual) / 12;
+    const incomeAnnual = incomeMonthly * 12;
+
+    // 自由費は残り。複数あるときは頭のひとつに寄せる（実際には1件だけ）
+    const freeCats = cats.filter((c) => c.group === "自由費");
+    const freeAnnual = incomeAnnual - fixedAnnual - plannedAnnual;
+    freeCats.forEach((c, i) => {
+      const a = i === 0 ? freeAnnual : 0;
+      const row = byTarget[c.id];
+      per[c.id] = { monthly: a / 12, annual: a, method: row ? row.method : "", memo: row ? row.memo : "", derived: true };
+    });
+
+    return {
+      live,
+      rows,
+      per,
+      income: { monthly: incomeMonthly, annual: incomeAnnual, method: incomeRow ? incomeRow.method : "", memo: incomeRow ? incomeRow.memo : "" },
+      fixedAnnual,
+      plannedAnnual,
+      freeAnnual,
+    };
+  }, [budgets, categories, year]);
+
+  function openBudget(t) {
+    const row = budgetPlan.rows.find((b) => b.target === t.target);
+    const cur = t.target === INCOME_TARGET
+      ? budgetPlan.income
+      : (budgetPlan.per[t.target] || { monthly: 0, annual: 0, method: "", memo: "" });
+    const amount = t.kind === "annual" ? cur.annual : cur.monthly;
+    setBgTarget(t);
+    setBgAmount(amount ? String(Math.round(amount)) : "");
+    setBgMethod(row ? row.method : (cur.method || ""));
+    setBgMemo(row ? row.memo : (cur.memo || ""));
+    setBgError("");
+  }
+
+  function submitBudget() {
+    const amount = Number(bgAmount);
+    if (bgAmount === "" || isNaN(amount) || amount < 0) {
+      setBgError("金額を正しく入力してください"); return;
+    }
+    const t = bgTarget;
+    const existing = budgets.find((b) => b.year === year && b.target === t.target);
+    const rec = {
+      id: existing ? existing.id : KakeiboAPI.newId("b_"),
+      year,
+      target: t.target,
+      monthly: t.kind === "annual" ? 0 : amount,
+      annual: t.kind === "annual" ? amount : 0,
+      method: bgMethod,
+      memo: bgMemo.trim(),
+    };
+
+    // その年の行がまだ1件も無いときは、いま見えている内容をまとめて書き出す。
+    // 1件だけ保存すると、残りが0になったように見えてしまう。
+    const extra = [];
+    if (!budgetPlan.live) {
+      const seed = (target, kind, monthly, annual) => {
+        if (target === t.target) return;
+        extra.push({
+          id: KakeiboAPI.newId("b_"), year, target,
+          monthly: kind === "annual" ? 0 : monthly,
+          annual: kind === "annual" ? annual : 0,
+          method: "", memo: "",
+        });
+      };
+      seed(INCOME_TARGET, "income", budgetPlan.income.monthly, 0);
+      budgetCats.forEach((c) => {
+        const b = budgetPlan.per[c.id];
+        if (!b) return;
+        if (c.group === "固定費") seed(c.id, "monthly", b.monthly, 0);
+        else if (c.group === "予定費") seed(c.id, "annual", 0, b.annual);
+      });
+    }
+
+    const all = [rec, ...extra];
+    setBudgets((prev) => {
+      const rest = prev.filter((b) => !all.some((x) => x.year === b.year && x.target === b.target));
+      return [...rest, ...all];
+    });
+    all.forEach((r) => KakeiboAPI.save("budgets", r));
+    setBgTarget(null);
+    flash(`${t.label}の予算を保存しました`);
+  }
+
+  const budgetOf = useCallback(
+    (c) => budgetPlan.per[c.id] || { monthly: 0, annual: 0, method: "", memo: "" },
+    [budgetPlan]
+  );
 
   /* ---- 立替先と支払方法（categories に相乗りしている） ---- */
 
@@ -741,7 +1017,7 @@ function KakeiboApp() {
   }
 
   function fillTwelveMonths(cat) {
-    const amount = Number(cat.monthlyBudget) || 0;
+    const amount = Math.round(budgetOf(cat).monthly);
     if (amount <= 0) return;
     const have = new Set(
       (entriesByCat[cat.id] || []).filter((e) => e.memo === "毎月一括").map((e) => monthIdxOf(e.date))
@@ -794,7 +1070,9 @@ function KakeiboApp() {
     const name = fName.trim();
     const amount = Number(fAmount);
     if (!name) { setFError("カテゴリ名を選択または入力してください"); return; }
-    if (!fAmount || isNaN(amount) || amount < 0) { setFError("予算額を正しく入力してください"); return; }
+    if (!budgetPlan.live && (!fAmount || isNaN(amount) || amount < 0)) {
+      setFError("予算額を正しく入力してください"); return;
+    }
 
     if (catMode === "add") {
       const created = {
@@ -1072,7 +1350,8 @@ function KakeiboApp() {
   const anaRows = useMemo(() => budgetCats.map((c) => {
     const totals = monthlyTotalsOf(c);
     const spent = anaScope === "year" ? totals.reduce((s, v) => s + v, 0) : totals[anaMonth];
-    const budget = anaScope === "year" ? annualBudgetOf(c) : monthBudgetOf(c);
+    const b = budgetOf(c);
+    const budget = anaScope === "year" ? b.annual : b.monthly;
     return { cat: c, spent, budget, color: colorOf(catIndex[c.id]) };
   }).sort((a, b) => {
     const ga = GROUP_ORDER.indexOf(a.cat.group), gb = GROUP_ORDER.indexOf(b.cat.group);
@@ -1185,6 +1464,9 @@ function KakeiboApp() {
   const entryCat = entryTarget ? catById(entryTarget.catId) : null;
 
   const TABS = [
+    // 予算は budgets シートを増やしてからでないと保存できないので、
+    // 貼り替え前は出さない（入れたのに消えるのを防ぐ）
+    ...(KakeiboAPI.supportsTable("budgets") ? [{ key: "budget", label: "予算", icon: Target }] : []),
     { key: "record", label: "記録", icon: PencilLine },
     { key: "history", label: "履歴", icon: ListOrdered },
     { key: "analysis", label: "分析", icon: PieChart },
@@ -1207,7 +1489,7 @@ function KakeiboApp() {
         <div className="kb-topbar">
           <div className="kb-bar-inner">
             <span className="kb-title">
-              {tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替精算"}
+              {tab === "budget" ? "予算" : tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替精算"}
             </span>
             <div className="kb-yearpick">
               <button className="kb-yearbtn" onClick={() => setYear((y) => y - 1)} aria-label="前の年"><ChevronLeft size={16} /></button>
@@ -1272,6 +1554,14 @@ function KakeiboApp() {
                 </div>
               </div>
             </div>
+          ) : tab === "budget" ? (
+            <BudgetTab
+              year={year}
+              plan={budgetPlan}
+              cats={budgetCats}
+              catIndex={catIndex}
+              onEdit={openBudget}
+            />
           ) : tab === "record" ? (
             <>
               {budgetCats.length === 0 ? (
@@ -1295,7 +1585,7 @@ function KakeiboApp() {
                               {[
                                 c.tags.length > 0
                                   ? c.tags.join("・")
-                                  : `${c.group === "予定費" ? "年間" : "月"}予算 ${yen(c.group === "予定費" ? c.annualBudget : c.monthlyBudget)}`,
+                                  : `月予算 ${yenExact(budgetOf(c).monthly)}`,
                                 c.note,
                               ].filter(Boolean).join("　")}
                             </div>
@@ -1842,7 +2132,7 @@ function KakeiboApp() {
                   )}
                 </div>
               ) : (
-                entryCat.group === "固定費" && entryCat.monthlyBudget > 0 && (
+                entryCat.group === "固定費" && budgetOf(entryCat).monthly > 0 && (
                   <div className="kb-btn-row" style={{ marginTop: 9 }}>
                     <button className="kb-btn ghost" onClick={() => fillTwelveMonths(entryCat)}>
                       <CalendarPlus size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
@@ -1998,10 +2288,14 @@ function KakeiboApp() {
                       <input className="kb-input" style={{ marginTop: 8 }} value={fName} onChange={(ev) => setFName(ev.target.value)} placeholder="カテゴリ名を入力" />
                     )}
                   </div>
-                  <div className="kb-field">
-                    <label className="kb-label">{fGroup === "予定費" ? "年間予算（円）" : "月予算（円）"}</label>
-                    <input className="kb-input" type="number" inputMode="numeric" value={fAmount} onChange={(ev) => setFAmount(ev.target.value)} placeholder={fGroup === "予定費" ? "100000" : "10000"} />
-                  </div>
+                  {budgetPlan.live ? (
+                    <div className="kb-note">金額は予算タブで設定します。</div>
+                  ) : (
+                    <div className="kb-field">
+                      <label className="kb-label">{fGroup === "予定費" ? "年間予算（円）" : "月予算（円）"}</label>
+                      <input className="kb-input" type="number" inputMode="numeric" value={fAmount} onChange={(ev) => setFAmount(ev.target.value)} placeholder={fGroup === "予定費" ? "100000" : "10000"} />
+                    </div>
+                  )}
                   <div className="kb-field">
                     <label className="kb-label">内訳（記録時の選択肢になります）</label>
                     {fTags.length > 0 && (
@@ -2047,7 +2341,7 @@ function KakeiboApp() {
                             <div className="kb-rowmain">
                               <div className="kb-rowtitle">{c.name}</div>
                               <div className="kb-rowsub">
-                                {c.group === "予定費" ? "年間" : "月"}予算 {yen(c.group === "予定費" ? c.annualBudget : c.monthlyBudget)}
+                                月予算 {yenExact(budgetOf(c).monthly)}
                                 {c.tags.length > 0 ? `・内訳${c.tags.length}件` : ""}
                                 {c.note ? `　${c.note}` : ""}
                               </div>
@@ -2120,6 +2414,43 @@ function KakeiboApp() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* 予算の入力シート */}
+        {bgTarget && (
+          <div className="kb-sheet-backdrop" onClick={() => setBgTarget(null)}>
+            <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
+              <div className="kb-sheet-head">
+                <span className="kb-sheet-title">
+                  {bgTarget.label}
+                  <span className="kb-sheet-period">
+                    {" "}{year}年の{bgTarget.kind === "annual" ? "年間予算" : bgTarget.kind === "income" ? "月の収入" : "月予算"}
+                  </span>
+                </span>
+                <button className="kb-close" onClick={() => setBgTarget(null)} aria-label="閉じる"><X size={19} /></button>
+              </div>
+              <div className="kb-field">
+                <label className="kb-label">
+                  {bgTarget.kind === "annual" ? "年間予算（円）" : bgTarget.kind === "income" ? "毎月の収入（円）" : "月予算（円）"}
+                </label>
+                <input className="kb-input amount" type="number" inputMode="numeric"
+                       value={bgAmount} onChange={(ev) => setBgAmount(ev.target.value)} placeholder="0" autoFocus />
+              </div>
+              <div className="kb-field">
+                <label className="kb-label">引き落とし先（任意）</label>
+                <select className="kb-input" value={bgMethod} onChange={(ev) => setBgMethod(ev.target.value)}>
+                  <option value="">選ばない</option>
+                  {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div className="kb-field">
+                <label className="kb-label">根拠メモ（任意）</label>
+                <input className="kb-input" value={bgMemo} onChange={(ev) => setBgMemo(ev.target.value)} placeholder="5,000x6人+VD" />
+              </div>
+              {bgError && <div className="kb-err">{bgError}</div>}
+              <button className="kb-btn" onClick={submitBudget}>保存する</button>
             </div>
           </div>
         )}
