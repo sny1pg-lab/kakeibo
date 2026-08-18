@@ -16,8 +16,29 @@ const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = R
 const MONTH_LABELS = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
 const GROUPS = ["固定費", "自由費", "予定費"];
 const GROUP_ORDER = ["自由費", "予定費", "固定費"];
-const PARTIES = ["生活費", "おいぬ", "娯楽費", "家具家電", "その他", "KITI", "ウェルボン"];
-const METHODS = ["楽天カード", "楽天ペイ", "楽天キャッシュ", "楽天銀行", "PayPayカード", "PayPay残高", "PASMO", "スタバカード", "NLカード", "現金", "その他"];
+
+// 立替先と支払方法は、カテゴリと同じ categories シートに置いている。
+// グループ名で見分けるだけなので、Apps Script 側は何も変えなくてよい。
+// 予算のカテゴリと混ざらないよう、集計や一覧では必ず取り除く。
+const PARTY_GROUP = "立替先";
+const METHOD_GROUP = "支払方法";
+const MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP];
+
+// まだ一度も編集していないときに見せる中身。
+// 画面から変更した時点で、この一覧がそのまま実体としてシートに書き出される。
+const DEFAULT_PARTIES = ["生活費", "おいぬ", "娯楽費", "家具家電", "その他", "KITI", "ウェルボン"];
+const DEFAULT_METHODS = ["楽天カード", "楽天ペイ", "楽天キャッシュ", "楽天銀行", "PayPayカード", "PayPay残高", "PASMO", "スタバカード", "NLカード", "現金", "その他"];
+
+function isMaster(c) { return MASTER_GROUPS.indexOf(c.group) >= 0; }
+function defaultsOf(group) { return group === PARTY_GROUP ? DEFAULT_PARTIES : DEFAULT_METHODS; }
+
+/**
+ * 一覧から消した名前でも、その記録を開いたときは選べるようにしておく。
+ * 選択肢に無いと、編集しただけで別のものに書き換わってしまう。
+ */
+function withCurrent(list, value) {
+  return value && list.indexOf(value) < 0 ? list.concat([value]) : list;
+}
 const PALETTE = ["#9B59D0", "#E08A2E", "#3FA9A0", "#D8607A", "#5B8DD6", "#7FA83C", "#C7913A", "#6C7A99", "#B0553F", "#4FA36B"];
 
 const NAME_OPTIONS = {
@@ -89,6 +110,18 @@ function CheckRow({ checked, onChange, children }) {
 /* 小さな道具                                                          */
 /* ------------------------------------------------------------------ */
 
+/** 控えを取った時刻。今日なら時刻だけ、それ以外は日付も付ける。 */
+function timeLabel(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const today = new Date();
+  const sameDay = d.getFullYear() === today.getFullYear()
+    && d.getMonth() === today.getMonth()
+    && d.getDate() === today.getDate();
+  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
 function yen(n) {
   return `¥${Math.round(Number(n) || 0).toLocaleString("ja-JP")}`;
 }
@@ -141,6 +174,106 @@ function amountStyle(x) {
 /* URL未設定のときの画面                                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 名前だけの一覧を編集する部品。立替先と支払方法に使う。
+ * 予算のような付随する値は持たず、追加と改名と削除だけができる。
+ */
+function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(null);     // 変更前の名前
+  const [confirming, setConfirming] = useState(null);
+  const [error, setError] = useState("");
+
+  function reset() {
+    setAdding(false); setEditing(null); setConfirming(null); setDraft(""); setError("");
+  }
+  function submitAdd() {
+    const msg = onAdd(draft);
+    if (msg) { setError(msg); return; }
+    reset();
+  }
+  function submitRename() {
+    const msg = onRename(editing, draft);
+    if (msg) { setError(msg); return; }
+    reset();
+  }
+  function submitDelete(name) {
+    const msg = onDelete(name);
+    setConfirming(null);
+    if (msg) { setError(msg); return; }
+    reset();
+  }
+
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div className="kb-section-label">{title}</div>
+      <div className="kb-card" style={{ background: "#FAFAFB" }}>
+        {names.map((n) => {
+          const used = useCount(n);
+          return (
+            <div className="kb-row" key={n} style={{ cursor: "default" }}>
+              {editing === n ? (
+                <div className="kb-rowmain">
+                  <input
+                    className="kb-input"
+                    value={draft}
+                    autoFocus
+                    onChange={(ev) => setDraft(ev.target.value)}
+                    onKeyDown={(ev) => { if (ev.key === "Enter") { ev.preventDefault(); submitRename(); } }}
+                  />
+                </div>
+              ) : (
+                <div className="kb-rowmain">
+                  <div className="kb-rowtitle">{n}</div>
+                  <div className="kb-rowsub">{used > 0 ? `${used}件の記録で使用中` : "まだ使われていません"}</div>
+                </div>
+              )}
+              <div className="kb-rowright">
+                {editing === n ? (
+                  <>
+                    <button className="kb-iconbtn" onClick={submitRename} aria-label="名前を保存"><Check size={15} /></button>
+                    <button className="kb-iconbtn" onClick={reset} aria-label="取消"><X size={14} /></button>
+                  </>
+                ) : confirming === n ? (
+                  <>
+                    <button className="kb-iconbtn" style={{ color: "var(--red)" }} onClick={() => submitDelete(n)} aria-label="削除を確定"><Check size={15} /></button>
+                    <button className="kb-iconbtn" onClick={() => setConfirming(null)} aria-label="取消"><X size={14} /></button>
+                  </>
+                ) : (
+                  <>
+                    <button className="kb-iconbtn" onClick={() => { reset(); setEditing(n); setDraft(n); }} aria-label={`${n}の名前を変える`}><Pencil size={14} /></button>
+                    <button className="kb-iconbtn" onClick={() => { reset(); setConfirming(n); }} aria-label={`${n}を削除`}><Trash2 size={14} /></button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {hint && <div className="kb-note">{hint}</div>}
+      {error && <div className="kb-err">{error}</div>}
+      {adding ? (
+        <div className="kb-inline" style={{ marginTop: 9 }}>
+          <input
+            className="kb-input"
+            value={draft}
+            autoFocus
+            placeholder={`${title}を入力`}
+            onChange={(ev) => setDraft(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === "Enter") { ev.preventDefault(); submitAdd(); } }}
+          />
+          <button className="kb-btn ghost" style={{ width: "auto", padding: "0 16px" }} onClick={submitAdd}>追加</button>
+        </div>
+      ) : (
+        <button className="kb-btn ghost" style={{ marginTop: 9 }} onClick={() => { reset(); setAdding(true); }}>
+          {title}を追加
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SetupScreen({ onSave }) {
   const [url, setUrl] = useState("");
   const [err, setErr] = useState("");
@@ -184,6 +317,9 @@ function KakeiboApp() {
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  // 控えを出しているときの、その控えを取った時刻。最新が届いたら null に戻す
+  const [shownAt, setShownAt] = useState(null);
   const [sync, setSync] = useState({ pending: 0, sending: false, error: "" });
   const [toast, setToast] = useState("");
 
@@ -207,7 +343,7 @@ function KakeiboApp() {
   const [enDate, setEnDate] = useState("");
   const [enTag, setEnTag] = useState("");
   const [enMemo, setEnMemo] = useState("");
-  const [enMethod, setEnMethod] = useState(METHODS[0]);
+  const [enMethod, setEnMethod] = useState(DEFAULT_METHODS[0]);
   const [enAmount, setEnAmount] = useState("");
   const [enType, setEnType] = useState("expense");
   const [enPending, setEnPending] = useState(true);
@@ -230,20 +366,22 @@ function KakeiboApp() {
   const [tkEditId, setTkEditId] = useState(null);
   const [tkDate, setTkDate] = useState("");
   const [tkMemo, setTkMemo] = useState("");
-  const [tkParty, setTkParty] = useState(PARTIES[0]);
+  const [tkParty, setTkParty] = useState(DEFAULT_PARTIES[0]);
   const [tkAmount, setTkAmount] = useState("");
   const [tkPending, setTkPending] = useState(true);
   const [tkError, setTkError] = useState("");
+  const [tkConfirmDel, setTkConfirmDel] = useState(false);
 
   const [trFormOpen, setTrFormOpen] = useState(false);
   const [trEditId, setTrEditId] = useState(null);
   const [trDate, setTrDate] = useState("");
-  const [trFrom, setTrFrom] = useState(METHODS[0]);
-  const [trTo, setTrTo] = useState(METHODS[6]);
+  const [trFrom, setTrFrom] = useState(DEFAULT_METHODS[0]);
+  const [trTo, setTrTo] = useState(DEFAULT_METHODS[6]);
   const [trAmount, setTrAmount] = useState("");
   const [trMemo, setTrMemo] = useState("");
   const [trPending, setTrPending] = useState(true);
   const [trError, setTrError] = useState("");
+  const [trConfirmDel, setTrConfirmDel] = useState(false);
 
   const toastTimerRef = useRef(null);
   const amountRef = useRef(null);
@@ -256,28 +394,66 @@ function KakeiboApp() {
 
   /* ---- 起動時の読み込み ---- */
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const applyData = useCallback((d) => {
+    setCategories(d.categories || []);
+    setEntries(d.entries || []);
+    setTransfers(d.transfers || []);
+    setSettlements(d.settlements || []);
+  }, []);
+
+  /**
+   * 全件を読み直す。
+   * quiet を立てると読み込み中の画面に切り替えず、いま出ている内容を残したまま裏で取りに行く。
+   * 前回の控えを先に出しているときに使う。
+   */
+  const load = useCallback((opts) => {
+    const quiet = !!(opts && opts.quiet);
+    if (!quiet) setLoading(true);
+    setRefreshing(true);
     setLoadError("");
     return KakeiboAPI.loadAll()
       .then((d) => {
-        setCategories(d.categories);
-        setEntries(d.entries);
-        setTransfers(d.transfers);
-        setSettlements(d.settlements);
+        applyData(d);
+        setShownAt(null);
         setLoading(false);
+        setRefreshing(false);
         KakeiboAPI.recoverQueue();
       })
       .catch((err) => {
         setLoadError(err.message || String(err));
         setLoading(false);
+        setRefreshing(false);
       });
-  }, []);
+  }, [applyData]);
 
   useEffect(() => {
     if (needsSetup) { setLoading(false); return; }
-    load();
-  }, [needsSetup, load]);
+    // 前回の控えがあれば先に出す。Apps Script の応答を待つ数秒を空白にしない
+    const snap = KakeiboAPI.readSnapshot();
+    if (snap) {
+      applyData(snap.data);
+      setShownAt(snap.savedAt);
+      setLoading(false);
+      load({ quiet: true });
+    } else {
+      load();
+    }
+  }, [needsSetup, load, applyData]);
+
+  /**
+   * 控えを取り直す。
+   * 送信し終わっていて読み込みにも失敗していないときだけにする。
+   * 途中の状態を控えると、次に開いたときスプレッドシートと食い違う。
+   */
+  useEffect(() => {
+    if (needsSetup || loading || loadError || refreshing) return;
+    if (sync.pending > 0 || sync.sending) return;
+    const t = setTimeout(() => {
+      KakeiboAPI.writeSnapshot({ categories, entries, transfers, settlements });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [categories, entries, transfers, settlements,
+      sync.pending, sync.sending, needsSetup, loading, loadError, refreshing]);
 
   useEffect(() => KakeiboAPI.subscribe(setSync), []);
 
@@ -294,22 +470,155 @@ function KakeiboApp() {
   const yearTransfers = useMemo(() => transfers.filter((t) => yearOf(t.date) === year), [transfers, year]);
   const yearSettlements = useMemo(() => settlements.filter((s) => yearOf(s.date) === year), [settlements, year]);
 
+  /* ---- 立替先と支払方法（categories に相乗りしている） ---- */
+
+  // 予算のカテゴリだけを取り出す。画面と集計はすべてこちらを使う
+  const budgetCats = useMemo(() => categories.filter((c) => !isMaster(c)), [categories]);
+
+  const masterRowsOf = useCallback(
+    (group) => categories.filter((c) => c.group === group),
+    [categories]
+  );
+
+  // 実体が無いうちは組み込みの既定値を見せる
+  const namesOf = useCallback((group) => {
+    const rows = masterRowsOf(group);
+    return rows.length ? rows.map((r) => r.name) : defaultsOf(group);
+  }, [masterRowsOf]);
+
+  const parties = useMemo(() => namesOf(PARTY_GROUP), [namesOf]);
+  const methods = useMemo(() => namesOf(METHOD_GROUP), [namesOf]);
+
+  // 支払方法は減らせるので、番号で選ぶときは範囲からはみ出さないようにする
+  const methodAt = useCallback(
+    (i) => methods[Math.min(i, methods.length - 1)] || "",
+    [methods]
+  );
+
+  /** その名前が実際の記録で何件使われているか。削除してよいかの判断に使う。 */
+  const masterUseCount = useCallback((group, name) => {
+    if (group === PARTY_GROUP) {
+      return settlements.filter((s) => s.party === name).length;
+    }
+    return entries.filter((e) => e.method === name).length
+      + transfers.filter((t) => t.from === name || t.to === name).length;
+  }, [settlements, entries, transfers]);
+
+  function makeMasterRow(group, name) {
+    return {
+      id: KakeiboAPI.newId(group === PARTY_GROUP ? "p_" : "m_"),
+      name, group, monthlyBudget: 0, annualBudget: 0, tags: [], note: "",
+    };
+  }
+
+  /**
+   * 既定値を見せているだけの状態から編集を始めたときは、
+   * まず既定値をそのまま実体として書き出す。
+   * これをしないと、1件足しただけで残りが消えたことになってしまう。
+   * mapName で、書き出す途中に名前を差し替えたり除いたりできる。
+   */
+  function seedMaster(group, mapName) {
+    const rows = [];
+    defaultsOf(group).forEach((n) => {
+      const next = mapName ? mapName(n) : n;
+      if (next) rows.push(makeMasterRow(group, next));
+    });
+    return rows;
+  }
+
+  function addMaster(group, rawName) {
+    const name = (rawName || "").trim();
+    if (!name) return "名前を入力してください";
+    if (namesOf(group).indexOf(name) >= 0) return "同じ名前がすでにあります";
+
+    const created = masterRowsOf(group).length ? [] : seedMaster(group);
+    created.push(makeMasterRow(group, name));
+    setCategories((p) => [...p, ...created]);
+    created.forEach(saveCategory);
+    return "";
+  }
+
+  function renameMaster(group, oldName, rawName) {
+    const name = (rawName || "").trim();
+    if (!name) return "名前を入力してください";
+    if (name === oldName) return "";
+    if (namesOf(group).indexOf(name) >= 0) return "同じ名前がすでにあります";
+
+    const rows = masterRowsOf(group);
+    if (rows.length) {
+      const target = rows.find((r) => r.name === oldName);
+      if (!target) return "見つかりませんでした";
+      const updated = { ...target, name };
+      setCategories((p) => p.map((c) => (c.id === target.id ? updated : c)));
+      saveCategory(updated);
+    } else {
+      const created = seedMaster(group, (n) => (n === oldName ? name : n));
+      setCategories((p) => [...p, ...created]);
+      created.forEach(saveCategory);
+    }
+
+    // 名前で結び付けているので、すでにある記録も一緒に書き換える
+    if (group === PARTY_GROUP) {
+      const hit = settlements.filter((s) => s.party === oldName);
+      if (hit.length) {
+        setSettlements((p) => p.map((s) => (s.party === oldName ? { ...s, party: name } : s)));
+        hit.forEach((s) => saveSettlement({ ...s, party: name }));
+      }
+    } else {
+      const hitE = entries.filter((e) => e.method === oldName);
+      if (hitE.length) {
+        setEntries((p) => p.map((e) => (e.method === oldName ? { ...e, method: name } : e)));
+        hitE.forEach((e) => saveEntry({ ...e, method: name }));
+      }
+      const hitT = transfers.filter((t) => t.from === oldName || t.to === oldName);
+      if (hitT.length) {
+        const swap = (t) => ({
+          ...t,
+          from: t.from === oldName ? name : t.from,
+          to: t.to === oldName ? name : t.to,
+        });
+        setTransfers((p) => p.map((t) => (t.from === oldName || t.to === oldName ? swap(t) : t)));
+        hitT.forEach((t) => saveTransfer(swap(t)));
+      }
+    }
+    return "";
+  }
+
+  function deleteMaster(group, name) {
+    const used = masterUseCount(group, name);
+    if (used > 0) return `${used}件の記録で使われているため削除できません`;
+    if (namesOf(group).length <= 1) return "最後のひとつは削除できません";
+
+    const rows = masterRowsOf(group);
+    if (rows.length) {
+      const target = rows.find((r) => r.name === name);
+      if (!target) return "見つかりませんでした";
+      setCategories((p) => p.filter((c) => c.id !== target.id));
+      KakeiboAPI.remove("categories", target.id);
+    } else {
+      const created = seedMaster(group, (n) => (n === name ? null : n));
+      setCategories((p) => [...p, ...created]);
+      created.forEach(saveCategory);
+    }
+    return "";
+  }
+
   const catIndex = useMemo(() => {
     const m = {};
-    categories.forEach((c, i) => { m[c.id] = i; });
+    budgetCats.forEach((c, i) => { m[c.id] = i; });
     return m;
-  }, [categories]);
-  const catById = useCallback((id) => categories.find((c) => c.id === id), [categories]);
+  }, [budgetCats]);
+  const catById = useCallback((id) => budgetCats.find((c) => c.id === id), [budgetCats]);
 
   const entriesByCat = useMemo(() => {
     const m = {};
-    categories.forEach((c) => { m[c.id] = []; });
+    budgetCats.forEach((c) => { m[c.id] = []; });
     yearEntries.forEach((e) => {
       if (!m[e.categoryId]) m[e.categoryId] = [];
       m[e.categoryId].push(e);
     });
     return m;
-  }, [categories, yearEntries]);
+  }, [budgetCats, yearEntries]);
 
   const monthlyTotalsOf = useCallback((c) => {
     const arr = Array(12).fill(0);
@@ -370,7 +679,7 @@ function KakeiboApp() {
     setEnDate(entry.date || `${year}-01-01`);
     setEnTag(entry.tag || cat.tags[0] || "");
     setEnMemo(entry.memo || "");
-    setEnMethod(entry.method || METHODS[0]);
+    setEnMethod(entry.method || methods[0]);
     setEnAmount(String(Math.abs(Number(entry.amount) || 0)));
     setEnType(isIncome(entry) ? "income" : "expense");
     setEnPending(!!entry.pending);
@@ -493,6 +802,31 @@ function KakeiboApp() {
     }
     setCatFormOpen(false);
   }
+  /**
+   * 端末に残しているアプリの控えを捨てて開き直す。
+   * 画面が古いまま変わらなくなったときの逃げ道として置いている。
+   * 記録そのもの（スプレッドシート側）には触れない。
+   */
+  function resetAppCache() {
+    if (sync.pending > 0) {
+      flash("未送信があります。送信が終わってからにしてください");
+      return;
+    }
+    const reload = () => window.location.reload();
+    try {
+      if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: "kakeibo-reset" });
+      }
+      if (window.caches && caches.keys) {
+        caches.keys()
+          .then((names) => Promise.all(names.map((n) => caches.delete(n))))
+          .then(reload, reload);
+        return;
+      }
+    } catch (e) { /* 使えない環境ではそのまま開き直すだけ */ }
+    reload();
+  }
+
   function deleteCategory(id) {
     const count = entries.filter((e) => e.categoryId === id).length;
     if (count > 0) {
@@ -508,17 +842,19 @@ function KakeiboApp() {
   /* ---- 立替 ---- */
 
   function openTkNew() {
-    setTkEditId(null); setTkDate(todayInYear()); setTkMemo(""); setTkParty(PARTIES[0]); setTkAmount("");
+    setTkEditId(null); setTkDate(todayInYear()); setTkMemo(""); setTkParty(parties[0]); setTkAmount("");
+    setTkConfirmDel(false);
     setTkPending(true); setTkError("");
     setTkFormOpen(true);
   }
   function openTkEdit(t) {
     setTkEditId(t.id); setTkDate(t.date || ""); setTkMemo(t.memo || "");
-    setTkParty(PARTIES.includes(t.party) ? t.party : PARTIES[0]);
+    setTkParty(t.party || parties[0]);
+    setTkConfirmDel(false);
     setTkAmount(String(t.amount ?? "")); setTkPending(!!t.pending); setTkError("");
     setTkFormOpen(true);
   }
-  function closeTk() { setTkFormOpen(false); setTkEditId(null); setTkError(""); backToDetail(); }
+  function closeTk() { setTkFormOpen(false); setTkEditId(null); setTkError(""); setTkConfirmDel(false); backToDetail(); }
   function submitTk() {
     const memo = tkMemo.trim();
     const amount = Number(tkAmount);
@@ -553,13 +889,13 @@ function KakeiboApp() {
   /* ---- 振替 ---- */
 
   function openTrNew() {
-    setTrEditId(null); setTrDate(todayInYear()); setTrFrom(METHODS[0]); setTrTo(METHODS[6]);
+    setTrEditId(null); setTrDate(todayInYear()); setTrFrom(methodAt(0)); setTrTo(methodAt(6)); setTrConfirmDel(false);
     setTrAmount(""); setTrMemo(""); setTrPending(true); setTrError("");
     setTrFormOpen(true);
   }
   function openTrEdit(t) {
     setTrEditId(t.id); setTrDate(t.date || todayInYear());
-    setTrFrom(t.from || METHODS[0]); setTrTo(t.to || METHODS[6]);
+    setTrFrom(t.from || methodAt(0)); setTrTo(t.to || methodAt(6)); setTrConfirmDel(false);
     setTrAmount(String(t.amount ?? "")); setTrMemo(t.memo || ""); setTrPending(!!t.pending); setTrError("");
     setTrFormOpen(true);
   }
@@ -584,7 +920,7 @@ function KakeiboApp() {
   function deleteTransfer(id) {
     setTransfers((p) => p.filter((t) => t.id !== id));
     KakeiboAPI.remove("transfers", id);
-    setTrFormOpen(false); setTrEditId(null);
+    setTrFormOpen(false); setTrEditId(null); setTrConfirmDel(false);
     flash("振替を削除しました");
   }
 
@@ -593,7 +929,7 @@ function KakeiboApp() {
   const allRows = useMemo(() => {
     const rows = [];
     yearEntries.forEach((e) => {
-      const c = categories.find((x) => x.id === e.categoryId);
+      const c = budgetCats.find((x) => x.id === e.categoryId);
       rows.push({
         ...e, kind: "expense",
         catId: e.categoryId,
@@ -609,7 +945,7 @@ function KakeiboApp() {
       return sortAsc ? d : -d;
     });
     return rows;
-  }, [yearEntries, yearTransfers, categories, catIndex, sortAsc]);
+  }, [yearEntries, yearTransfers, budgetCats, catIndex, sortAsc]);
 
   /* ---- 未確定（Excelで金額をオレンジにしていたもの） ---- */
 
@@ -617,7 +953,7 @@ function KakeiboApp() {
     const rows = [];
     yearEntries.forEach((e) => {
       if (!e.pending) return;
-      const c = categories.find((x) => x.id === e.categoryId);
+      const c = budgetCats.find((x) => x.id === e.categoryId);
       rows.push({
         ...e, kind: "expense", catId: e.categoryId,
         catName: c ? c.name : "（カテゴリなし）",
@@ -628,7 +964,7 @@ function KakeiboApp() {
     yearSettlements.forEach((s) => { if (s.pending) rows.push({ ...s, kind: "settlement" }); });
     rows.sort((a, b) => (a.date === b.date ? String(a.id).localeCompare(String(b.id)) : b.date.localeCompare(a.date)));
     return rows;
-  }, [yearEntries, yearTransfers, yearSettlements, categories, catIndex]);
+  }, [yearEntries, yearTransfers, yearSettlements, budgetCats, catIndex]);
 
   /** 金額が確定した印をつける。 */
   function confirmPending(row) {
@@ -694,7 +1030,7 @@ function KakeiboApp() {
 
   /* ---- 分析 ---- */
 
-  const anaRows = useMemo(() => categories.map((c) => {
+  const anaRows = useMemo(() => budgetCats.map((c) => {
     const totals = monthlyTotalsOf(c);
     const spent = anaScope === "year" ? totals.reduce((s, v) => s + v, 0) : totals[anaMonth];
     const budget = anaScope === "year" ? annualBudgetOf(c) : monthBudgetOf(c);
@@ -703,7 +1039,7 @@ function KakeiboApp() {
     const ga = GROUP_ORDER.indexOf(a.cat.group), gb = GROUP_ORDER.indexOf(b.cat.group);
     if (ga !== gb) return ga - gb;
     return catIndex[a.cat.id] - catIndex[b.cat.id];
-  }), [categories, monthlyTotalsOf, anaScope, anaMonth, catIndex]);
+  }), [budgetCats, monthlyTotalsOf, anaScope, anaMonth, catIndex]);
 
   const anaTotal = anaRows.reduce((a, r) => ({ spent: a.spent + r.spent, budget: a.budget + r.budget }), { spent: 0, budget: 0 });
 
@@ -720,10 +1056,10 @@ function KakeiboApp() {
 
   const dCats = useMemo(() => {
     if (!detail) return [];
-    if (detail.type === "category") return categories.filter((c) => c.id === detail.key);
-    if (detail.type === "group") return categories.filter((c) => c.group === detail.key);
+    if (detail.type === "category") return budgetCats.filter((c) => c.id === detail.key);
+    if (detail.type === "group") return budgetCats.filter((c) => c.group === detail.key);
     return [];
-  }, [detail, categories]);
+  }, [detail, budgetCats]);
 
   const dTagOptions = detail && detail.type === "category" && dCats[0] ? dCats[0].tags : [];
 
@@ -772,7 +1108,17 @@ function KakeiboApp() {
     [yearSettlements, tkMonth]
   );
 
-  const partySummary = useMemo(() => PARTIES.map((p) => {
+  // 一覧から消したあとも、その区分の記録が残っていれば表示に出す。
+  // そうしないと記録が画面から見えなくなってしまう。
+  const partyNames = useMemo(() => {
+    const names = parties.slice();
+    scopedSettlements.forEach((t) => {
+      if (t.party && names.indexOf(t.party) < 0) names.push(t.party);
+    });
+    return names;
+  }, [parties, scopedSettlements]);
+
+  const partySummary = useMemo(() => partyNames.map((p) => {
     const items = scopedSettlements.filter((t) => t.party === p);
     return {
       party: p, items,
@@ -780,12 +1126,16 @@ function KakeiboApp() {
       settled: items.filter((t) => t.settled).reduce((a, t) => a + (Number(t.amount) || 0), 0),
       count: items.length,
     };
-  }).filter((p) => p.count > 0).sort((a, b) => b.unsettled - a.unsettled), [scopedSettlements]);
+  }).filter((p) => p.count > 0).sort((a, b) => b.unsettled - a.unsettled), [partyNames, scopedSettlements]);
 
   const maxParty = Math.max(...partySummary.map((p) => p.unsettled + p.settled), 1);
   const dPartyItems = detail && detail.type === "party"
     ? scopedSettlements.filter((t) => t.party === detail.key).sort((a, b) => (a.date || "").localeCompare(b.date || ""))
     : [];
+
+  // 何かしら表示できる中身があるか。控えを出している間の読み込み失敗で画面を空にしないため
+  const hasData = categories.length > 0 || entries.length > 0
+    || transfers.length > 0 || settlements.length > 0;
 
   const entryCat = entryTarget ? catById(entryTarget.catId) : null;
 
@@ -805,33 +1155,52 @@ function KakeiboApp() {
   return (
     <div className="kb">
       <div className="kb-wrap">
-        <div className="kb-topbar">
-          <span className="kb-title">
-            {tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替精算"}
-          </span>
-          <div className="kb-yearpick">
-            <button className="kb-yearbtn" onClick={() => setYear((y) => y - 1)} aria-label="前の年"><ChevronLeft size={16} /></button>
-            <span className="kb-yearlabel">{year}年</span>
-            <button className="kb-yearbtn" onClick={() => setYear((y) => y + 1)} aria-label="次の年"><ChevronRight size={16} /></button>
+        {/* 見出しと状態の帯は、下にたどっても隠れないよう上に貼り付けておく。
+            未送信のまま気づかず閉じてしまうのを防ぐのが主な目的。 */}
+        <div className="kb-stickytop">
+          <div className="kb-topbar">
+            <span className="kb-title">
+              {tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替精算"}
+            </span>
+            <div className="kb-yearpick">
+              <button className="kb-yearbtn" onClick={() => setYear((y) => y - 1)} aria-label="前の年"><ChevronLeft size={16} /></button>
+              <span className="kb-yearlabel">{year}年</span>
+              <button className="kb-yearbtn" onClick={() => setYear((y) => y + 1)} aria-label="次の年"><ChevronRight size={16} /></button>
+            </div>
           </div>
-        </div>
 
-        {sync.error ? (
-          <div className="kb-syncbar error">
-            <span>保存できていません（未送信{sync.pending}件）。{sync.error}</span>
-            <button className="kb-syncbtn" onClick={() => KakeiboAPI.retry()}>再送</button>
-          </div>
-        ) : sync.pending > 0 ? (
-          <div className="kb-syncbar pending">
-            <Loader2 size={14} className="kb-spin" />
-            <span>保存中…（{sync.pending}件）</span>
-          </div>
-        ) : null}
+          {sync.error ? (
+            <div className="kb-syncbar error">
+              <span><b>未送信が{sync.pending}件あります。</b>{sync.error}</span>
+              <button className="kb-syncbtn" onClick={() => KakeiboAPI.retry()}>再送</button>
+            </div>
+          ) : sync.pending > 0 && !sync.sending ? (
+            <div className="kb-syncbar error">
+              <span><b>未送信が{sync.pending}件あります。</b>このまま閉じると失われます。</span>
+              <button className="kb-syncbtn" onClick={() => KakeiboAPI.retry()}>送信</button>
+            </div>
+          ) : sync.pending > 0 ? (
+            <div className="kb-syncbar pending">
+              <Loader2 size={14} className="kb-spin" />
+              <span>保存中…（残り{sync.pending}件）</span>
+            </div>
+          ) : loadError && hasData ? (
+            <div className="kb-syncbar error">
+              <span>最新を取れませんでした。表示は{shownAt ? timeLabel(shownAt) + "時点の" : ""}控えです。</span>
+              <button className="kb-syncbtn" onClick={() => load({ quiet: true })}>再読み込み</button>
+            </div>
+          ) : shownAt ? (
+            <div className="kb-syncbar stale">
+              <Loader2 size={14} className="kb-spin" />
+              <span>{timeLabel(shownAt)}時点の内容です。最新を確認しています…</span>
+            </div>
+          ) : null}
+        </div>
 
         <div className="kb-body">
           {loading ? (
             <div className="kb-loading"><Loader2 size={16} className="kb-spin" /> 読み込み中…</div>
-          ) : loadError ? (
+          ) : loadError && !hasData ? (
             <div className="kb-card">
               <div className="kb-empty">
                 <strong>データを読み込めませんでした</strong>
@@ -846,7 +1215,7 @@ function KakeiboApp() {
             </div>
           ) : tab === "record" ? (
             <>
-              {categories.length === 0 ? (
+              {budgetCats.length === 0 ? (
                 <div className="kb-card">
                   <div className="kb-empty">
                     <strong>カテゴリがありません</strong>
@@ -854,11 +1223,11 @@ function KakeiboApp() {
                   </div>
                 </div>
               ) : (
-                GROUP_ORDER.filter((g) => categories.some((c) => c.group === g)).map((g) => (
+                GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
                   <div key={g}>
                     <div className="kb-section-label">{g}</div>
                     <div className="kb-card">
-                      {categories.filter((c) => c.group === g).map((c) => (
+                      {budgetCats.filter((c) => c.group === g).map((c) => (
                         <button className="kb-row" key={c.id} onClick={() => openEntryNew(c)}>
                           <div className="kb-dot" style={{ background: colorOf(catIndex[c.id]) }}>{c.name.slice(0, 1)}</div>
                           <div className="kb-rowmain">
@@ -919,7 +1288,7 @@ function KakeiboApp() {
               {histMonth !== "pending" && (
                 <div className="kb-chips" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button className={`kb-tagchip ${histCat === null ? "on" : ""}`} onClick={() => setHistCat(null)}>すべて</button>
-                  {categories.map((c) => {
+                  {budgetCats.map((c) => {
                     const n = histCatCounts[c.id] || 0;
                     return (
                       <button
@@ -1377,7 +1746,7 @@ function KakeiboApp() {
               <div className="kb-field">
                 <label className="kb-label">支払い方法</label>
                 <select className="kb-input" value={enMethod} onChange={(ev) => setEnMethod(ev.target.value)}>
-                  {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {withCurrent(methods, enMethod).map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
               <CheckRow checked={!enPending} onChange={(v) => setEnPending(!v)}>
@@ -1424,7 +1793,7 @@ function KakeiboApp() {
               <div className="kb-field">
                 <label className="kb-label">区分</label>
                 <select className="kb-input" value={tkParty} onChange={(ev) => setTkParty(ev.target.value)}>
-                  {PARTIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                  {withCurrent(parties, tkParty).map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div className="kb-field">
@@ -1438,7 +1807,14 @@ function KakeiboApp() {
               <button className="kb-btn" onClick={submitTk}>{tkEditId ? "保存する" : "記録する"}</button>
               {tkEditId && (
                 <div className="kb-btn-row" style={{ marginTop: 9 }}>
-                  <button className="kb-btn danger" onClick={() => deleteSettlement(tkEditId)}>この立替を削除</button>
+                  {tkConfirmDel ? (
+                    <>
+                      <button className="kb-btn danger" onClick={() => deleteSettlement(tkEditId)}>本当に削除する</button>
+                      <button className="kb-btn ghost" onClick={() => setTkConfirmDel(false)}>やめる</button>
+                    </>
+                  ) : (
+                    <button className="kb-btn danger" onClick={() => setTkConfirmDel(true)}>この立替を削除</button>
+                  )}
                 </div>
               )}
             </div>
@@ -1465,13 +1841,13 @@ function KakeiboApp() {
                 <div className="kb-field" style={{ flex: 1 }}>
                   <label className="kb-label">振替元</label>
                   <select className="kb-input" value={trFrom} onChange={(ev) => setTrFrom(ev.target.value)}>
-                    {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {withCurrent(methods, trFrom).map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div className="kb-field" style={{ flex: 1 }}>
                   <label className="kb-label">振替先</label>
                   <select className="kb-input" value={trTo} onChange={(ev) => setTrTo(ev.target.value)}>
-                    {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {withCurrent(methods, trTo).map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
               </div>
@@ -1486,7 +1862,14 @@ function KakeiboApp() {
               <button className="kb-btn" onClick={submitTr}>{trEditId ? "保存する" : "記録する"}</button>
               {trEditId && (
                 <div className="kb-btn-row" style={{ marginTop: 9 }}>
-                  <button className="kb-btn danger" onClick={() => deleteTransfer(trEditId)}>この振替を削除</button>
+                  {trConfirmDel ? (
+                    <>
+                      <button className="kb-btn danger" onClick={() => deleteTransfer(trEditId)}>本当に削除する</button>
+                      <button className="kb-btn ghost" onClick={() => setTrConfirmDel(false)}>やめる</button>
+                    </>
+                  ) : (
+                    <button className="kb-btn danger" onClick={() => setTrConfirmDel(true)}>この振替を削除</button>
+                  )}
                 </div>
               )}
             </div>
@@ -1517,7 +1900,7 @@ function KakeiboApp() {
                     <select className="kb-input" value={fNameChoice} onChange={(ev) => pickName(ev.target.value)}>
                       <option value="" disabled>選択してください</option>
                       {(NAME_OPTIONS[fGroup] || []).map((n) => {
-                        const taken = catMode === "add" && categories.some((c) => c.name === n);
+                        const taken = catMode === "add" && budgetCats.some((c) => c.name === n);
                         return <option key={n} value={n} disabled={taken}>{taken ? `${n}（登録済み）` : n}</option>;
                       })}
                       <option value={CUSTOM_NAME}>その他（手入力）</option>
@@ -1565,11 +1948,11 @@ function KakeiboApp() {
                 </>
               ) : (
                 <>
-                  {GROUP_ORDER.filter((g) => categories.some((c) => c.group === g)).map((g) => (
+                  {GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
                     <div key={g}>
                       <div className="kb-section-label">{g}</div>
                       <div className="kb-card" style={{ background: "#FAFAFB" }}>
-                        {categories.filter((c) => c.group === g).map((c) => (
+                        {budgetCats.filter((c) => c.group === g).map((c) => (
                           <div className="kb-row" key={c.id} style={{ cursor: "default" }}>
                             <div className="kb-dot" style={{ background: colorOf(catIndex[c.id]) }}>{c.name.slice(0, 1)}</div>
                             <div className="kb-rowmain">
@@ -1598,6 +1981,26 @@ function KakeiboApp() {
                   ))}
                   <button className="kb-btn" style={{ marginTop: 14 }} onClick={openCatAdd}>カテゴリを追加</button>
 
+                  <MasterList
+                    title="立替先"
+                    hint="立替タブの区分になります。名前を変えると、これまでの記録もまとめて変わります。"
+                    names={parties}
+                    useCount={(n) => masterUseCount(PARTY_GROUP, n)}
+                    onAdd={(n) => addMaster(PARTY_GROUP, n)}
+                    onRename={(o, n) => renameMaster(PARTY_GROUP, o, n)}
+                    onDelete={(n) => deleteMaster(PARTY_GROUP, n)}
+                  />
+
+                  <MasterList
+                    title="支払方法"
+                    hint="明細と振替で選べるようになります。名前を変えると、これまでの記録もまとめて変わります。"
+                    names={methods}
+                    useCount={(n) => masterUseCount(METHOD_GROUP, n)}
+                    onAdd={(n) => addMaster(METHOD_GROUP, n)}
+                    onRename={(o, n) => renameMaster(METHOD_GROUP, o, n)}
+                    onDelete={(n) => deleteMaster(METHOD_GROUP, n)}
+                  />
+
                   <div className="kb-section-label" style={{ marginTop: 22 }}>保存の状態</div>
                   <div className={`kb-savebox ${sync.error ? "error" : sync.pending > 0 ? "" : "ok"}`}>
                     {sync.error
@@ -1616,6 +2019,15 @@ function KakeiboApp() {
                   </div>
                   <div className="kb-btn-row" style={{ marginTop: 9 }}>
                     <button className="kb-btn ghost" onClick={() => { KakeiboAPI.setUrl(""); setNeedsSetup(true); }}>設定し直す</button>
+                  </div>
+
+                  <div className="kb-section-label" style={{ marginTop: 22 }}>アプリの更新</div>
+                  <div className="kb-savebox">
+                    2回目からは通信を待たずに開けるよう、アプリ本体を端末に控えています。
+                    画面が古いまま変わらないときは、その控えを消して開き直してください。記録には影響しません。
+                  </div>
+                  <div className="kb-btn-row" style={{ marginTop: 9 }}>
+                    <button className="kb-btn ghost" onClick={resetAppCache}>控えを消して開き直す</button>
                   </div>
                 </>
               )}

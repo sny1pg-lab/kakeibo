@@ -12,6 +12,7 @@
 
   var CONFIG_KEY = 'kakeibo.apiUrl';
   var QUEUE_KEY = 'kakeibo.queue';
+  var SNAPSHOT_KEY = 'kakeibo.snapshot';
   var MAX_BACKOFF_MS = 30000;
   var REQUEST_TIMEOUT_MS = 30000;
 
@@ -32,6 +33,9 @@
   }
   function storeSet(key, value) {
     try { if (store) store.setItem(key, value); } catch (e) { /* 使えなくても動作は続ける */ }
+  }
+  function storeDel(key) {
+    try { if (store) store.removeItem(key); } catch (e) { /* 同上 */ }
   }
 
   /* ---- 状態 ---- */
@@ -158,7 +162,10 @@
 
   var api = {
     setUrl: function (url) {
-      apiUrl = (url || '').trim();
+      var next = (url || '').trim();
+      // 別のスプレッドシートに向け直したら、前の控えは中身が合わない
+      if (next !== apiUrl) storeDel(SNAPSHOT_KEY);
+      apiUrl = next;
       storeSet(CONFIG_KEY, apiUrl);
       if (apiUrl) flush();
     },
@@ -263,6 +270,30 @@
         }
       } catch (e) { /* 壊れていたら捨てる */ }
       return 0;
+    },
+
+    /**
+     * 直前に見えていた中身の控え。
+     *
+     * Apps Script は起動が遅く、開いてから数秒なにも出ない時間ができる。
+     * 控えを先に出しておき、最新が届いたら差し替える。
+     * 保存領域が使えない環境では null が返るだけで、これまでどおり動く。
+     */
+    readSnapshot: function () {
+      var raw = storeGet(SNAPSHOT_KEY);
+      if (!raw) return null;
+      try {
+        var saved = JSON.parse(raw);
+        if (!saved || !saved.data) return null;
+        return saved;   // { savedAt, data }
+      } catch (e) {
+        storeDel(SNAPSHOT_KEY);
+        return null;
+      }
+    },
+
+    writeSnapshot: function (data) {
+      storeSet(SNAPSHOT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data: data }));
     },
 
     newId: function (prefix) {

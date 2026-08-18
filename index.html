@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>家計簿</title>
 
 <link rel="manifest" href="manifest.webmanifest">
@@ -15,8 +15,19 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=40c12f20">
+
+<!-- 書体は後回しにする。
+     ふつうに読み込むと、この1行が返ってくるまで画面が真っ白のまま止まる。
+     日本語の書体は容量が大きいので、回線が細いとその待ち時間がそのまま体感になる。
+     media="print" で読み込みだけ先に始め、届いたところで適用する。
+     届くまでは端末の標準の書体で出て、そのあと Zen Kaku Gothic New に差し替わる。 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap"
+      media="print" onload="this.media='all'">
+<noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+</noscript>
+
+<link rel="stylesheet" href="styles.css?v=e2938c80">
 </head>
 <body>
 <div id="root">
@@ -25,9 +36,18 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
-<script src="api.js?v=40c12f20"></script>
-<script src="app.js?v=40c12f20"></script>
+<script src="vendor.js?v=e2938c80"></script>
+<script src="api.js?v=e2938c80"></script>
+<script src="app.js?v=e2938c80"></script>
+
+<script>
+// 2回目以降は通信を待たずに開けるようにする。
+// 使えない環境では何もせず、これまでどおり毎回読み込むだけになる。
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* 使えなくても支障はない */ });
+  });
+}
+</script>
 </body>
 </html>
