@@ -988,9 +988,14 @@ function KakeiboApp() {
     });
     yearTransfers.forEach((t) => { if (t.pending) rows.push({ ...t, kind: "transfer" }); });
     yearSettlements.forEach((s) => { if (s.pending) rows.push({ ...s, kind: "settlement" }); });
-    rows.sort((a, b) => (a.date === b.date ? String(a.id).localeCompare(String(b.id)) : b.date.localeCompare(a.date)));
+    rows.sort((a, b) => {
+      const d = a.date === b.date
+        ? String(a.id).localeCompare(String(b.id))
+        : a.date.localeCompare(b.date);
+      return sortAsc ? d : -d;
+    });
     return rows;
-  }, [yearEntries, yearTransfers, yearSettlements, budgetCats, catIndex]);
+  }, [yearEntries, yearTransfers, yearSettlements, budgetCats, catIndex, sortAsc]);
 
   /** 金額が確定した印をつける。 */
   function confirmPending(row) {
@@ -1194,11 +1199,13 @@ function KakeiboApp() {
 
   return (
     <div className="kb">
-      <div className="kb-wrap">
-        {/* 見出しと状態の帯は、下にたどっても隠れないよう上に貼り付けておく。
-            未送信のまま気づかず閉じてしまうのを防ぐのが主な目的。 */}
-        <div className="kb-stickytop">
-          <div className="kb-topbar">
+      {/* 見出しと状態の帯は、下にたどっても隠れないよう上に貼り付けておく。
+          未送信のまま気づかず閉じてしまうのを防ぐのが主な目的。
+          帯そのものは画面の端から端まで伸ばし、中身だけを本文と同じ幅に絞る。
+          下のタブと同じ作りにして、広い画面でも白い帯がつながって見えるようにしている。 */}
+      <div className="kb-stickytop">
+        <div className="kb-topbar">
+          <div className="kb-bar-inner">
             <span className="kb-title">
               {tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替精算"}
             </span>
@@ -1208,35 +1215,47 @@ function KakeiboApp() {
               <button className="kb-yearbtn" onClick={() => setYear((y) => y + 1)} aria-label="次の年"><ChevronRight size={16} /></button>
             </div>
           </div>
+        </div>
 
-          {sync.error ? (
-            <div className="kb-syncbar error">
+        {sync.error ? (
+          <div className="kb-syncbar error">
+            <div className="kb-bar-inner">
               <span><b>未送信が{sync.pending}件あります。</b>{sync.error}</span>
               <button className="kb-syncbtn" onClick={() => KakeiboAPI.retry()}>再送</button>
             </div>
-          ) : sync.pending > 0 && !sync.sending ? (
-            <div className="kb-syncbar error">
+          </div>
+        ) : sync.pending > 0 && !sync.sending ? (
+          <div className="kb-syncbar error">
+            <div className="kb-bar-inner">
               <span><b>未送信が{sync.pending}件あります。</b>このまま閉じると失われます。</span>
               <button className="kb-syncbtn" onClick={() => KakeiboAPI.retry()}>送信</button>
             </div>
-          ) : sync.pending > 0 ? (
-            <div className="kb-syncbar pending">
+          </div>
+        ) : sync.pending > 0 ? (
+          <div className="kb-syncbar pending">
+            <div className="kb-bar-inner">
               <Loader2 size={14} className="kb-spin" />
               <span>保存中…（残り{sync.pending}件）</span>
             </div>
-          ) : loadError && hasData ? (
-            <div className="kb-syncbar error">
+          </div>
+        ) : loadError && hasData ? (
+          <div className="kb-syncbar error">
+            <div className="kb-bar-inner">
               <span>最新を取れませんでした。表示は{shownAt ? timeLabel(shownAt) + "時点の" : ""}控えです。</span>
               <button className="kb-syncbtn" onClick={() => load({ quiet: true })}>再読み込み</button>
             </div>
-          ) : shownAt ? (
-            <div className="kb-syncbar stale">
+          </div>
+        ) : shownAt ? (
+          <div className="kb-syncbar stale">
+            <div className="kb-bar-inner">
               <Loader2 size={14} className="kb-spin" />
               <span>{timeLabel(shownAt)}時点の内容です。最新を確認しています…</span>
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
+      </div>
 
+      <div className="kb-wrap">
         <div className="kb-body">
           {loading ? (
             <div className="kb-loading"><Loader2 size={16} className="kb-spin" /> 読み込み中…</div>
@@ -1370,7 +1389,10 @@ function KakeiboApp() {
                 <>
                   <div className="kb-detail-total" style={{ paddingTop: 8 }}>
                     <span>未確定 {yen(pendingRows.reduce((a, r) => a + r.amount, 0))}</span>
-                    <span className="kb-detail-count">{pendingRows.length}件</span>
+                    <div className="kb-sortwrap">
+                      <span className="kb-detail-count">{pendingRows.length}件</span>
+                      <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+                    </div>
                   </div>
                   {pendingRows.length === 0 ? (
                     <div className="kb-card">
