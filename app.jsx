@@ -176,6 +176,17 @@ function colorOf(idx) {
 }
 
 /**
+ * 明細の見出し。「内訳 内容」を1行にまとめる。
+ * 内訳が無いカテゴリは内容だけ、内容が内訳と同じなら内訳だけになる。
+ */
+function entryTitle(e) {
+  const parts = [];
+  if (e.tag) parts.push(e.tag);
+  if (e.memo && e.memo !== e.tag) parts.push(e.memo);
+  return parts.join(" ") || e.catName || "";
+}
+
+/**
  * 金額の色。Excelで金額をオレンジにしていたのと同じで、
  * 未確定はオレンジ。確定した収入は緑。
  */
@@ -233,7 +244,7 @@ function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete })
                   <input
                     className="kb-input"
                     value={draft}
-                    autoFocus
+                   
                     onChange={(ev) => setDraft(ev.target.value)}
                     onKeyDown={(ev) => { if (ev.key === "Enter") { ev.preventDefault(); submitRename(); } }}
                   />
@@ -273,7 +284,7 @@ function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete })
           <input
             className="kb-input"
             value={draft}
-            autoFocus
+           
             placeholder={`${title}を入力`}
             onChange={(ev) => setDraft(ev.target.value)}
             onKeyDown={(ev) => { if (ev.key === "Enter") { ev.preventDefault(); submitAdd(); } }}
@@ -328,7 +339,9 @@ function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
       <div className="kb-rowmain">
         <div className="kb-rowtitle" style={strong ? { fontWeight: 700 } : undefined}>{label}</div>
         {/* 引き落とし先もメモも無い行にも同じ高さを持たせて、一覧の行を揃える */}
-        <div className="kb-rowsub">{[method, memo].filter(Boolean).join("　") || "\u00A0"}</div>
+        {/* 引き落とし先は一覧に出さない（編集シートでは設定できる）。
+            メモが無い行にも同じ高さを持たせて、一覧の行を揃える */}
+        <div className="kb-rowsub">{memo || "\u00A0"}</div>
       </div>
       <span className="kb-amount" style={derived ? { color: "var(--pending)" } : undefined}>
         {yenExact(amount)}
@@ -1009,6 +1022,8 @@ function KakeiboApp() {
     setEntries((prev) => [...prev, created]);
     saveEntry(created);
     setEnMemo(""); setEnAmount(""); setEnError("");
+    // 連続入力のときだけ金額欄へ戻す。シートを開いた直後は
+    // キーボードを出さず、金額欄を押してから出るようにしている
     if (amountRef.current) amountRef.current.focus();
     flash(`${Number(enDate.slice(5, 7))}/${Number(enDate.slice(8, 10))}　${enType === "income" ? "収入 " : ""}${yen(absAmount)} を記録しました`);
   }
@@ -1518,7 +1533,7 @@ function KakeiboApp() {
         <div className="kb-topbar">
           <div className="kb-bar-inner">
             <span className="kb-title">
-              {tab === "budget" ? "予算" : tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替精算"}
+              {tab === "budget" ? "予算" : tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替申請"}
             </span>
             <div className="kb-yearpick">
               <button className="kb-yearbtn" onClick={() => setYear((y) => y - 1)} aria-label="前の年"><ChevronLeft size={16} /></button>
@@ -1802,10 +1817,8 @@ function KakeiboApp() {
                           <button className="kb-row" key={e.id} onClick={() => openEntryEdit(catById(e.catId), e)}>
                             <div className="kb-dot" style={{ background: e.color }}>{e.catName.slice(0, 1)}</div>
                             <div className="kb-rowmain">
-                              <div className="kb-rowtitle">{e.memo || e.tag || e.catName}</div>
-                              <div className="kb-rowsub">
-                                {[e.pending ? "未確定" : null, isIncome(e) ? "収入" : null, e.catName, e.tag, e.method].filter(Boolean).join("・")}
-                              </div>
+                              <div className="kb-rowtitle">{entryTitle(e)}</div>
+                              <div className="kb-rowsub">{e.method}</div>
                             </div>
                             <span className="kb-amount" style={amountStyle(e)}>
                               {isIncome(e) ? "+" : ""}{yen(Math.abs(Number(e.amount) || 0))}
@@ -1931,7 +1944,7 @@ function KakeiboApp() {
               ) : (
                 <>
                   <div className="kb-section-label">
-                    {tkMonth === null ? "区分ごとの未精算" : `${MONTH_LABELS[tkMonth]}の区分ごとの未精算`}
+                    {tkMonth === null ? "区分ごとの未申請" : `${MONTH_LABELS[tkMonth]}の区分ごとの未申請`}
                   </div>
                   <div className="kb-card">
                     {partySummary.map((p) => (
@@ -1948,8 +1961,8 @@ function KakeiboApp() {
                             <span className="un" style={{ width: `${(p.unsettled / maxParty) * 100}%` }} />
                           </div>
                           <div className="kb-rowsub">
-                            {p.items.filter((t) => !t.settled).length}件未精算
-                            {p.settled > 0 ? `・精算済み ${yen(p.settled)}` : ""}
+                            {p.items.filter((t) => !t.settled).length}件未申請
+                            {p.settled > 0 ? `・申請済み ${yen(p.settled)}` : ""}
                           </div>
                         </div>
                         <ChevronRight size={17} className="kb-chev" />
@@ -1987,7 +2000,7 @@ function KakeiboApp() {
               {detail.type === "party" ? (
                 <>
                   <div className="kb-detail-total">
-                    <span>未精算 {yen(dPartyItems.filter((t) => !t.settled).reduce((a, t) => a + t.amount, 0))}</span>
+                    <span>未申請 {yen(dPartyItems.filter((t) => !t.settled).reduce((a, t) => a + t.amount, 0))}</span>
                     <div className="kb-sortwrap">
                       <span className="kb-detail-count">{dPartyItems.length}件</span>
                       <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
@@ -2007,7 +2020,7 @@ function KakeiboApp() {
                         <button
                           className="kb-iconbtn"
                           onClick={() => toggleSettled(t)}
-                          aria-label={t.settled ? "未精算に戻す" : "精算済みにする"}
+                          aria-label={t.settled ? "未申請に戻す" : "申請済みにする"}
                         >
                           {t.settled ? <Undo2 size={15} /> : <Check size={16} />}
                         </button>
@@ -2072,10 +2085,8 @@ function KakeiboApp() {
                             {e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}` : "—"}
                           </span>
                           <div className="kb-rowmain">
-                            <div className="kb-rowtitle">{e.memo || e.tag || e.catName}</div>
-                            <div className="kb-rowsub">
-                              {[isIncome(e) ? "収入" : null, detail.type === "group" ? e.catName : null, e.tag, e.method].filter(Boolean).join("・")}
-                            </div>
+                            <div className="kb-rowtitle">{entryTitle(e)}</div>
+                            <div className="kb-rowsub">{e.method}</div>
                           </div>
                           <span className="kb-amount" style={amountStyle(e)}>
                             {isIncome(e) ? "+" : ""}{yen(Math.abs(Number(e.amount) || 0))}
@@ -2118,7 +2129,7 @@ function KakeiboApp() {
                   onChange={(ev) => setEnAmount(ev.target.value)}
                   placeholder="0"
                   style={enType === "income" ? { color: "var(--accent)" } : undefined}
-                  autoFocus
+                 
                 />
               </div>
               <div className="kb-field">
@@ -2187,7 +2198,7 @@ function KakeiboApp() {
               </div>
               <div className="kb-field">
                 <label className="kb-label">金額（円）</label>
-                <input className="kb-input amount" type="number" inputMode="numeric" value={tkAmount} onChange={(ev) => setTkAmount(ev.target.value)} placeholder="0" autoFocus />
+                <input className="kb-input amount" type="number" inputMode="numeric" value={tkAmount} onChange={(ev) => setTkAmount(ev.target.value)} placeholder="0" />
               </div>
               <div className="kb-field">
                 <label className="kb-label">日付</label>
@@ -2242,7 +2253,7 @@ function KakeiboApp() {
               </div>
               <div className="kb-field">
                 <label className="kb-label">金額（円）</label>
-                <input className="kb-input amount" type="number" inputMode="numeric" value={trAmount} onChange={(ev) => setTrAmount(ev.target.value)} placeholder="0" autoFocus />
+                <input className="kb-input amount" type="number" inputMode="numeric" value={trAmount} onChange={(ev) => setTrAmount(ev.target.value)} placeholder="0" />
               </div>
               <div className="kb-field">
                 <label className="kb-label">日付</label>
@@ -2474,7 +2485,7 @@ function KakeiboApp() {
                     {bgTarget.kind === "annual" ? "年間予算（円）" : bgTarget.kind === "income" ? "毎月の収入（円）" : "月予算（円）"}
                   </label>
                   <input className="kb-input amount" type="number" inputMode="numeric"
-                         value={bgAmount} onChange={(ev) => setBgAmount(ev.target.value)} placeholder="0" autoFocus />
+                         value={bgAmount} onChange={(ev) => setBgAmount(ev.target.value)} placeholder="0" />
                 </div>
               )}
               <div className="kb-field">

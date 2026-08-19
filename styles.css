@@ -74,7 +74,9 @@ body { background: #F2F3F5; }
 
 .kb-field { margin-bottom: 12px; }
 .kb-label { display: block; font-size: 11.5px; color: var(--sub); margin-bottom: 5px; }
-.kb-input { width: 100%; padding: 11px 12px; font-size: 15px; border: 1px solid var(--line); border-radius: 9px; background: #FAFAFB; color: var(--ink); font-family: inherit; }
+/* iOSは入力欄の文字が16px未満だと、タップしたときに画面を勝手に拡大する。
+   16px以上にしておけばそれが起きない */
+.kb-input { width: 100%; padding: 11px 12px; font-size: 16px; border: 1px solid var(--line); border-radius: 9px; background: #FAFAFB; color: var(--ink); font-family: inherit; }
 .kb-input:focus { outline: none; border-color: var(--accent); background: #fff; }
 select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--sub) 50%), linear-gradient(135deg, var(--sub) 50%, transparent 50%); background-position: calc(100% - 16px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px); background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
 .kb-input.amount { font-size: 20px; font-weight: 700; text-align: right; font-feature-settings: "tnum"; }
@@ -184,7 +186,7 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 .kb-setup { max-width: 480px; margin: 0 auto; padding: 40px 20px; font-family: 'Zen Kaku Gothic New', -apple-system, sans-serif; color: #1F2328; }
 .kb-setup h1 { font-size: 17px; margin: 0 0 6px; }
 .kb-setup p { font-size: 13px; color: #8A9099; line-height: 1.8; margin: 0 0 16px; }
-.kb-setup input { width: 100%; padding: 11px 12px; font-size: 14px; border: 1px solid #E8E9EC; border-radius: 9px; box-sizing: border-box; font-family: ui-monospace, Menlo, monospace; background: #fff; color: #1F2328; }
+.kb-setup input { width: 100%; padding: 11px 12px; font-size: 16px; border: 1px solid #E8E9EC; border-radius: 9px; box-sizing: border-box; font-family: ui-monospace, Menlo, monospace; background: #fff; color: #1F2328; }
 .kb-setup button { width: 100%; margin-top: 12px; padding: 13px; font-size: 15px; font-weight: 700; border: none; border-radius: 10px; background: #2FA85A; color: #fff; font-family: inherit; cursor: pointer; }
 .kb-setup .kb-err { margin-top: 12px; }
 
