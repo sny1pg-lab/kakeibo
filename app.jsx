@@ -1237,8 +1237,10 @@ function KakeiboApp() {
   /* ---- 振替 ---- */
 
   function openTrNew() {
-    setTrEditId(null); setTrDate(todayInYear()); setTrFrom(methodAt(0)); setTrTo(methodAt(6)); setTrConfirmDel(false);
-    setTrAmount(""); setTrMemo(""); setTrPending(true); setTrError("");
+    const to = methodAt(6);
+    setTrEditId(null); setTrDate(todayInYear()); setTrFrom(methodAt(0)); setTrTo(to); setTrConfirmDel(false);
+    // 内容は振替先の名前を初期値にする。「PASMO」「スタバカード」と書くのが常なので
+    setTrAmount(""); setTrMemo(to); setTrPending(true); setTrError("");
     setTrFormOpen(true);
   }
   function openTrEdit(t) {
@@ -2268,14 +2270,19 @@ function KakeiboApp() {
                 </div>
                 <div className="kb-field" style={{ flex: 1 }}>
                   <label className="kb-label">振替先</label>
-                  <select className="kb-input" value={trTo} onChange={(ev) => setTrTo(ev.target.value)}>
+                  <select className="kb-input" value={trTo} onChange={(ev) => {
+                    // 内容が前の振替先のままなら一緒に付け替える。
+                    // 自分で書き換えていた場合はそのまま残す
+                    if (trMemo === trTo || !trMemo) setTrMemo(ev.target.value);
+                    setTrTo(ev.target.value);
+                  }}>
                     {withCurrent(methods, trTo).map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
               </div>
               <div className="kb-field">
                 <label className="kb-label">メモ（任意）</label>
-                <input className="kb-input" value={trMemo} onChange={(ev) => setTrMemo(ev.target.value)} placeholder="PASMOチャージ" />
+                <input className="kb-input" value={trMemo} onChange={(ev) => setTrMemo(ev.target.value)} placeholder="PASMO" />
               </div>
               <CheckRow checked={!trPending} onChange={(v) => setTrPending(!v)}>
                 確定
