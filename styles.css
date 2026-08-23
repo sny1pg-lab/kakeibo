@@ -80,6 +80,36 @@ body { background: #F2F3F5; }
 .kb-input:focus { outline: none; border-color: var(--accent); background: #fff; }
 select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--sub) 50%), linear-gradient(135deg, var(--sub) 50%, transparent 50%); background-position: calc(100% - 16px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px); background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
 .kb-input.amount { font-size: 20px; font-weight: 700; text-align: right; font-feature-settings: "tnum"; }
+
+/* iOSのSafariは日付欄に独自の見た目を当てるため、幅の指定が効かず右へはみ出す。
+   見た目を打ち消し、幅の計算を他の欄と同じにする */
+.kb-input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+  height: 44px;                 /* iOSが中身に合わせて伸ばすのを止める */
+  line-height: normal;
+}
+/* 日付の値を左寄せにする。既定では中身が中央に寄る端末がある */
+.kb-input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+/* カレンダーのアイコンは欄の内側に収める */
+.kb-input[type="date"]::-webkit-calendar-picker-indicator { margin: 0; padding: 0; }
+
+/* 金額欄に打った式の計算結果 */
+.kb-calc { font-size: 12px; color: var(--accent); text-align: right; padding: 5px 2px 0; font-feature-settings: "tnum"; }
+.kb-calc.ng { color: var(--red); }
+
+/* 数字キーボードに出ない記号を押せるようにする */
+.kb-keys { display: flex; gap: 6px; margin-top: 8px; }
+.kb-key {
+  flex: 1; padding: 9px 0; font-size: 16px; font-family: inherit;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  color: var(--ink); cursor: pointer;
+}
+.kb-key:active { background: var(--bg); }
+.kb-key.wide { flex: 1.2; color: var(--sub); }
 .kb-inline { display: flex; gap: 9px; }
 .kb-err { font-size: 12px; color: var(--red); margin-bottom: 9px; }
 

@@ -176,6 +176,96 @@ function colorOf(idx) {
 }
 
 /**
+ * 金額欄の中身を数値にする。式が打たれていれば計算した結果を返す。
+ * 計算できなければ NaN を返し、これまでどおり入力のやり直しを促す。
+ */
+function amountValue(src) {
+  const r = KakeiboCalc.evalAmount(src);
+  return r.ok ? Math.round(r.value) : NaN;
+}
+
+/**
+ * 金額の入力欄。式をそのまま打てる。
+ *
+ * 「1634+1090+460」と打つと、下に計算結果が出て、保存するときは3184になる。
+ * スマホの数字キーボードには記号が出ないので、欄のすぐ下に記号のボタンを置く。
+ * ボタンはカーソルの位置に差し込むので、途中に足すこともできる。
+ */
+function AmountField({ value, onChange, income, inputRef }) {
+  const ownRef = useRef(null);
+  const ref = inputRef || ownRef;
+  // 記号を差し込んだあとのカーソル位置。
+  // 値を変えると再描画で末尾に飛ぶので、描画が終わってから戻す
+  const caretRef = useRef(null);
+
+  useEffect(() => {
+    if (caretRef.current == null) return;
+    const el = ref.current;
+    const at = caretRef.current;
+    caretRef.current = null;
+    if (!el) return;
+    el.focus();
+    try { el.setSelectionRange(at, at); } catch (e) { /* 型によっては動かない */ }
+  });
+  const calc = KakeiboCalc.evalAmount(value);
+  const showCalc = KakeiboCalc.looksLikeExpression(value);
+
+  /** カーソルの位置に記号を差し込む。キーボードは出したままにする。 */
+  function insert(text) {
+    const el = ref.current;
+    if (!el) { onChange(value + text); return; }
+    const start = el.selectionStart == null ? value.length : el.selectionStart;
+    const end = el.selectionEnd == null ? start : el.selectionEnd;
+    caretRef.current = start + text.length;
+    onChange(value.slice(0, start) + text + value.slice(end));
+  }
+
+  function backspace() {
+    const el = ref.current;
+    const start = el && el.selectionStart != null ? el.selectionStart : value.length;
+    const end = el && el.selectionEnd != null ? el.selectionEnd : start;
+    if (start === 0 && start === end) return;
+    const from = start === end ? start - 1 : start;
+    caretRef.current = from;
+    onChange(value.slice(0, from) + value.slice(end));
+  }
+
+  return (
+    <>
+      <input
+        ref={ref}
+        className="kb-input amount"
+        type="text"
+        /* 式を打てるようにするため type は text。iOSでは数字のキーボードが出る */
+        inputMode="decimal"
+        autoComplete="off"
+        value={value}
+        onChange={(ev) => onChange(ev.target.value)}
+        placeholder="0"
+        style={income ? { color: "var(--accent)" } : undefined}
+      />
+      {showCalc && (
+        <div className={`kb-calc ${calc.ok ? "" : "ng"}`}>
+          {calc.ok ? `= ${yen(calc.value)}` : "式が正しくありません"}
+        </div>
+      )}
+      <div className="kb-keys">
+        {/* ボタンを押しても入力欄の焦点を奪わない。
+            奪うとカーソルの位置が末尾に戻り、スマホではキーボードも閉じてしまう */}
+        {["+", "-", "×", "÷", "(", ")"].map((k) => (
+          <button key={k} type="button" className="kb-key"
+                  onPointerDown={(ev) => ev.preventDefault()}
+                  onClick={() => insert(k)}>{k}</button>
+        ))}
+        <button type="button" className="kb-key wide"
+                onPointerDown={(ev) => ev.preventDefault()}
+                onClick={backspace} aria-label="1文字消す">⌫</button>
+      </div>
+    </>
+  );
+}
+
+/**
  * 明細の見出し。「内訳 内容」を1行にまとめる。
  * 内訳が無いカテゴリは内容だけ、内容が内訳と同じなら内訳だけになる。
  */
@@ -716,7 +806,7 @@ function KakeiboApp() {
 
   function submitBudget() {
     const t = bgTarget;
-    const amount = Number(bgAmount);
+    const amount = amountValue(bgAmount);
     if (t.kind !== "note" && (bgAmount === "" || isNaN(amount) || amount < 0)) {
       setBgError("金額を正しく入力してください"); return;
     }
@@ -997,7 +1087,7 @@ function KakeiboApp() {
   function closeEntry() { setEntryTarget(null); setEnError(""); setEnConfirmDel(false); backToDetail(); }
 
   function submitEntry() {
-    const amount = Number(enAmount);
+    const amount = amountValue(enAmount);
     if (!enDate) { setEnError("日付を入力してください"); return; }
     if (!enAmount || isNaN(amount) || amount === 0) { setEnError("金額を入力してください"); return; }
     const { catId, entryId } = entryTarget;
@@ -1205,7 +1295,7 @@ function KakeiboApp() {
 
   function submitTk() {
     const memo = tkMemo.trim();
-    const amount = Number(tkAmount);
+    const amount = amountValue(tkAmount);
     if (!memo) { setTkError("内容を入力してください"); return; }
     if (!tkAmount || isNaN(amount) || amount <= 0) { setTkError("金額を正しく入力してください"); return; }
     if (tkEditId) {
@@ -1250,7 +1340,7 @@ function KakeiboApp() {
     setTrFormOpen(true);
   }
   function submitTr() {
-    const amount = Number(trAmount);
+    const amount = amountValue(trAmount);
     if (!trDate) { setTrError("日付を入力してください"); return; }
     if (!trAmount || isNaN(amount) || amount <= 0) { setTrError("金額を入力してください"); return; }
     if (trFrom === trTo) { setTrError("振替元と振替先が同じです"); return; }
@@ -2122,17 +2212,8 @@ function KakeiboApp() {
               </div>
               <div className="kb-field">
                 <label className="kb-label">金額（円）</label>
-                <input
-                  ref={amountRef}
-                  className="kb-input amount"
-                  type="number"
-                  inputMode="numeric"
-                  value={enAmount}
-                  onChange={(ev) => setEnAmount(ev.target.value)}
-                  placeholder="0"
-                  style={enType === "income" ? { color: "var(--accent)" } : undefined}
-                 
-                />
+                <AmountField value={enAmount} onChange={setEnAmount}
+                             income={enType === "income"} inputRef={amountRef} />
               </div>
               <div className="kb-field">
                 <label className="kb-label">日付</label>
@@ -2200,7 +2281,7 @@ function KakeiboApp() {
               </div>
               <div className="kb-field">
                 <label className="kb-label">金額（円）</label>
-                <input className="kb-input amount" type="number" inputMode="numeric" value={tkAmount} onChange={(ev) => setTkAmount(ev.target.value)} placeholder="0" />
+                <AmountField value={tkAmount} onChange={setTkAmount} />
               </div>
               <div className="kb-field">
                 <label className="kb-label">日付</label>
@@ -2255,7 +2336,7 @@ function KakeiboApp() {
               </div>
               <div className="kb-field">
                 <label className="kb-label">金額（円）</label>
-                <input className="kb-input amount" type="number" inputMode="numeric" value={trAmount} onChange={(ev) => setTrAmount(ev.target.value)} placeholder="0" />
+                <AmountField value={trAmount} onChange={setTrAmount} />
               </div>
               <div className="kb-field">
                 <label className="kb-label">日付</label>
@@ -2491,8 +2572,7 @@ function KakeiboApp() {
                   <label className="kb-label">
                     {bgTarget.kind === "annual" ? "年間予算（円）" : bgTarget.kind === "income" ? "毎月の収入（円）" : "月予算（円）"}
                   </label>
-                  <input className="kb-input amount" type="number" inputMode="numeric"
-                         value={bgAmount} onChange={(ev) => setBgAmount(ev.target.value)} placeholder="0" />
+                  <AmountField value={bgAmount} onChange={setBgAmount} />
                 </div>
               )}
               <div className="kb-field">
