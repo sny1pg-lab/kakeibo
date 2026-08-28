@@ -115,6 +115,11 @@
   function colorOf(idx) {
     return PALETTE[(idx >= 0 ? idx : 0) % PALETTE.length];
   }
+  function enteredFormula(src) {
+    const text = String(src == null ? "" : src).trim();
+    if (!KakeiboCalc.looksLikeExpression(text)) return "";
+    return KakeiboCalc.evalAmount(text).ok ? text : "";
+  }
   function amountValue(src) {
     const r = KakeiboCalc.evalAmount(src);
     return r.ok ? Math.round(r.value) : NaN;
@@ -197,6 +202,9 @@
     if (e.tag) parts.push(e.tag);
     if (e.memo && e.memo !== e.tag) parts.push(e.memo);
     return parts.join(" ") || e.catName || "";
+  }
+  function EntryTitle({ e }) {
+    return /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, entryTitle(e), e.formula ? /* @__PURE__ */ React.createElement("span", { className: "kb-formula" }, e.formula) : null);
   }
   function amountStyle(x) {
     if (x.pending) return { color: "var(--pending)" };
@@ -808,11 +816,17 @@
       setEnTag(entry.tag || cat.tags[0] || "");
       setEnMemo(entry.memo || "");
       setEnMethod(entry.method || methods[0]);
-      setEnAmount(String(Math.abs(Number(entry.amount) || 0)));
+      setEnAmount(entry.formula || String(Math.abs(Number(entry.amount) || 0)));
       setEnType(isIncome(entry) ? "income" : "expense");
       setEnPending(!!entry.pending);
       setEnError("");
       setEnConfirmDel(false);
+    }
+    function pickEntryCat(id) {
+      const next = budgetCats.find((c) => c.id === id);
+      if (!next) return;
+      setEntryTarget((t) => ({ ...t, catId: id }));
+      setEnTag((tag) => next.tags.indexOf(tag) >= 0 ? tag : next.tags[0] || "");
     }
     function closeEntry() {
       setEntryTarget(null);
@@ -844,6 +858,7 @@
           method: enMethod,
           pending: enPending
         };
+        if (KakeiboAPI.supports("entries", "formula")) updated.formula = enteredFormula(enAmount);
         setEntries((prev) => prev.map((e) => e.id === entryId ? updated : e));
         saveEntry(updated);
         closeEntry();
@@ -861,12 +876,10 @@
         method: enMethod,
         pending: enPending
       };
+      if (KakeiboAPI.supports("entries", "formula")) created.formula = enteredFormula(enAmount);
       setEntries((prev) => [...prev, created]);
       saveEntry(created);
-      setEnMemo("");
-      setEnAmount("");
-      setEnError("");
-      if (amountRef.current) amountRef.current.focus();
+      closeEntry();
       flash(`${Number(enDate.slice(5, 7))}/${Number(enDate.slice(8, 10))}\u3000${enType === "income" ? "\u53CE\u5165 " : ""}${yen(absAmount)} \u3092\u8A18\u9332\u3057\u307E\u3057\u305F`);
     }
     function deleteEntry(entryId) {
@@ -1468,7 +1481,7 @@
       /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, r.kind === "transfer" ? `\u632F\u66FF\u30FB${r.from} \u2192 ${r.to}` : r.kind === "settlement" ? `\u7ACB\u66FF\u30FB${r.party}` : [isIncome(r) ? "\u53CE\u5165" : null, r.catName, r.tag, r.method].filter(Boolean).join("\u30FB"))
     ), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: { color: "var(--pending)" } }, isIncome(r) ? "+" : "", yen(r.amount)), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn confirm", onClick: () => confirmPending(r), "aria-label": "\u91D1\u984D\u3092\u78BA\u5B9A\u3059\u308B" }, /* @__PURE__ */ React.createElement(Check, { size: 16 }))))), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub", style: { padding: "10px 4px 0", whiteSpace: "normal" } }, "\u30AB\u30FC\u30C9\u306E\u660E\u7D30\u306B\u8F09\u3063\u305F\u3082\u306E\u304B\u3089\u30C1\u30A7\u30C3\u30AF\u3092\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u62BC\u3059\u3068\u78BA\u5B9A\u306B\u306A\u308A\u3001\u3053\u306E\u4E00\u89A7\u304B\u3089\u6D88\u3048\u307E\u3059\u3002"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total", style: { paddingTop: 8 } }, /* @__PURE__ */ React.createElement("span", null, histMonth === null ? "\u5E74\u9593" : MONTH_LABELS[histMonth], "\u306E\u652F\u51FA ", yen(histTotal)), /* @__PURE__ */ React.createElement("div", { className: "kb-sortwrap" }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, histRows.length, "\u4EF6"), /* @__PURE__ */ React.createElement(SortButton, { asc: sortAsc, onToggle: () => setSortAsc((v) => !v) }))), historyByDate.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, histMonth === null ? "\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093" : `${MONTH_LABELS[histMonth]}\u306E\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093`), histMonth === null ? "\u8A18\u9332\u30BF\u30D6\u304B\u3089\u30AB\u30C6\u30B4\u30EA\u3092\u9078\u3093\u3067\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002" : "\u4E0A\u306E\u5E74\u9593\u3092\u62BC\u3059\u3068\u5168\u671F\u9593\u306B\u623B\u308A\u307E\u3059\u3002")) : historyByDate.map((day) => {
       const dayTotal = day.rows.filter((e) => e.kind !== "transfer").reduce((s, e) => s + signedAmount(e), 0);
-      return /* @__PURE__ */ React.createElement("div", { key: day.date }, /* @__PURE__ */ React.createElement("div", { className: "kb-datehead" }, /* @__PURE__ */ React.createElement("span", { className: "d" }, Number(day.date.slice(5, 7)), "/", Number(day.date.slice(8, 10)), "\uFF08", weekday(day.date), "\uFF09"), /* @__PURE__ */ React.createElement("span", { className: "t" }, "\u652F\u51FA ", yen(dayTotal))), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, day.rows.map((e) => e.kind === "transfer" ? /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => openTrEdit(e) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: "#AEB4BC" } }, /* @__PURE__ */ React.createElement(ArrowLeftRight, { size: 15 })), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, e.memo || "\u632F\u66FF"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, "\u632F\u66FF\u30FB", e.from, " \u2192 ", e.to)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: { color: e.pending ? "var(--pending)" : "var(--sub)" } }, yen(e.amount)), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })) : /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => openEntryEdit(catById(e.catId), e) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: e.color } }, e.catName.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, entryTitle(e)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, e.method)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: amountStyle(e) }, isIncome(e) ? "+" : "", yen(Math.abs(Number(e.amount) || 0))), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })))));
+      return /* @__PURE__ */ React.createElement("div", { key: day.date }, /* @__PURE__ */ React.createElement("div", { className: "kb-datehead" }, /* @__PURE__ */ React.createElement("span", { className: "d" }, Number(day.date.slice(5, 7)), "/", Number(day.date.slice(8, 10)), "\uFF08", weekday(day.date), "\uFF09"), /* @__PURE__ */ React.createElement("span", { className: "t" }, "\u652F\u51FA ", yen(dayTotal))), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, day.rows.map((e) => e.kind === "transfer" ? /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => openTrEdit(e) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: "#AEB4BC" } }, /* @__PURE__ */ React.createElement(ArrowLeftRight, { size: 15 })), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, e.memo || "\u632F\u66FF"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, "\u632F\u66FF\u30FB", e.from, " \u2192 ", e.to)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: { color: e.pending ? "var(--pending)" : "var(--sub)" } }, yen(e.amount)), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })) : /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: e.id, onClick: () => openEntryEdit(catById(e.catId), e) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: e.color } }, e.catName.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement(EntryTitle, { e }), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, e.method)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: amountStyle(e) }, isIncome(e) ? "+" : "", yen(Math.abs(Number(e.amount) || 0))), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })))));
     }))) : tab === "analysis" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-seg", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("button", { className: anaScope === "month" ? "on" : "", onClick: () => setAnaScope("month") }, "\u6708\u5225"), /* @__PURE__ */ React.createElement("button", { className: anaScope === "year" ? "on" : "", onClick: () => setAnaScope("year") }, "\u5E74\u5225")), anaScope === "month" && /* @__PURE__ */ React.createElement("div", { className: "kb-monthbar" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setAnaMonth((m) => (m + 11) % 12), "aria-label": "\u524D\u306E\u6708" }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 17 })), /* @__PURE__ */ React.createElement("span", null, year, "\u5E74 ", MONTH_LABELS[anaMonth]), /* @__PURE__ */ React.createElement("button", { onClick: () => setAnaMonth((m) => (m + 1) % 12), "aria-label": "\u6B21\u306E\u6708" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 17 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-total-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-total-row" }, /* @__PURE__ */ React.createElement("span", { className: "kb-total-label" }, "\u4E88\u7B97 ", yen(anaTotal.budget)), /* @__PURE__ */ React.createElement("span", { className: "kb-total-label" }, anaTotal.spent > anaTotal.budget ? "\u8D85\u904E" : "\u6B8B", " ", yen(Math.abs(anaTotal.budget - anaTotal.spent)))), /* @__PURE__ */ React.createElement("div", { className: "kb-total-row", style: { marginTop: 6 } }, /* @__PURE__ */ React.createElement("span", { className: "kb-total-big", style: { color: anaTotal.spent > anaTotal.budget ? "var(--red)" : "var(--ink)" } }, yen(anaTotal.spent))), /* @__PURE__ */ React.createElement("div", { className: "kb-bar" }, /* @__PURE__ */ React.createElement("span", { style: {
       width: `${anaTotal.budget > 0 ? Math.min(anaTotal.spent / anaTotal.budget * 100, 100) : 0}%`,
       background: anaTotal.spent > anaTotal.budget ? "var(--red)" : "var(--accent)"
@@ -1513,7 +1526,15 @@
       const c = catById(e.catId);
       leaveDetail();
       openEntryEdit(c, e);
-    } }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-date" }, e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}` : "\u2014"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, entryTitle(e)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, e.method)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: amountStyle(e) }, isIncome(e) ? "+" : "", yen(Math.abs(Number(e.amount) || 0))))))))), entryTarget && entryCat && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: closeEntry }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, entryCat.name, "\u3000", entryTarget.entryId ? "\u306E\u8A18\u9332\u3092\u7DE8\u96C6" : "\u3092\u8A18\u9332"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: closeEntry, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("div", { className: "kb-seg" }, /* @__PURE__ */ React.createElement("button", { className: enType === "expense" ? "on" : "", onClick: () => setEnType("expense") }, "\u652F\u51FA"), /* @__PURE__ */ React.createElement("button", { className: enType === "income" ? "on" : "", onClick: () => setEnType("income") }, "\u53CE\u5165"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u91D1\u984D\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(
+    } }, /* @__PURE__ */ React.createElement("span", { className: "kb-detail-date" }, e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}` : "\u2014"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement(EntryTitle, { e }), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, e.method)), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: amountStyle(e) }, isIncome(e) ? "+" : "", yen(Math.abs(Number(e.amount) || 0))))))))), entryTarget && entryCat && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: closeEntry }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, entryTarget.entryId ? "\u8A18\u9332\u3092\u7DE8\u96C6" : "\u8A18\u9332\u3059\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: closeEntry, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u30AB\u30C6\u30B4\u30EA"), /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        className: "kb-input",
+        value: entryTarget.catId,
+        onChange: (ev) => pickEntryCat(ev.target.value)
+      },
+      GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("optgroup", { key: g, label: g }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("option", { key: c.id, value: c.id }, c.name))))
+    )), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("div", { className: "kb-seg" }, /* @__PURE__ */ React.createElement("button", { className: enType === "expense" ? "on" : "", onClick: () => setEnType("expense") }, "\u652F\u51FA"), /* @__PURE__ */ React.createElement("button", { className: enType === "income" ? "on" : "", onClick: () => setEnType("income") }, "\u53CE\u5165"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u91D1\u984D\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(
       AmountField,
       {
         value: enAmount,

@@ -176,6 +176,16 @@ function colorOf(idx) {
 }
 
 /**
+ * 金額欄に打たれたものが式なら、その式をそのまま返す。
+ * 数字だけを直接打った場合は空を返し、古い式が残らないようにする。
+ */
+function enteredFormula(src) {
+  const text = String(src == null ? "" : src).trim();
+  if (!KakeiboCalc.looksLikeExpression(text)) return "";
+  return KakeiboCalc.evalAmount(text).ok ? text : "";
+}
+
+/**
  * 金額欄の中身を数値にする。式が打たれていれば計算した結果を返す。
  * 計算できなければ NaN を返し、これまでどおり入力のやり直しを促す。
  */
@@ -274,6 +284,19 @@ function entryTitle(e) {
   if (e.tag) parts.push(e.tag);
   if (e.memo && e.memo !== e.tag) parts.push(e.memo);
   return parts.join(" ") || e.catName || "";
+}
+
+/**
+ * 明細の見出し。内容の横に、金額を出した式を控えめに添える。
+ * 立て替えて後で受け取った場合など、あとから理由が分かるようにするため。
+ */
+function EntryTitle({ e }) {
+  return (
+    <div className="kb-rowtitle">
+      {entryTitle(e)}
+      {e.formula ? <span className="kb-formula">{e.formula}</span> : null}
+    </div>
+  );
 }
 
 /**
@@ -1078,12 +1101,25 @@ function KakeiboApp() {
     setEnTag(entry.tag || cat.tags[0] || "");
     setEnMemo(entry.memo || "");
     setEnMethod(entry.method || methods[0]);
-    setEnAmount(String(Math.abs(Number(entry.amount) || 0)));
+    // 式で入れた記録は式のまま出す。金額を手で打ち直せば式は消える
+    setEnAmount(entry.formula || String(Math.abs(Number(entry.amount) || 0)));
     setEnType(isIncome(entry) ? "income" : "expense");
     setEnPending(!!entry.pending);
     setEnError("");
     setEnConfirmDel(false);
   }
+  /**
+   * 入力中にカテゴリを切り替える。
+   * 内訳の選択肢もそのカテゴリのものに入れ替わるので、
+   * いま選んでいる内訳が新しいカテゴリに無ければ先頭に寄せる。
+   */
+  function pickEntryCat(id) {
+    const next = budgetCats.find((c) => c.id === id);
+    if (!next) return;
+    setEntryTarget((t) => ({ ...t, catId: id }));
+    setEnTag((tag) => (next.tags.indexOf(tag) >= 0 ? tag : (next.tags[0] || "")));
+  }
+
   function closeEntry() { setEntryTarget(null); setEnError(""); setEnConfirmDel(false); backToDetail(); }
 
   function submitEntry() {
@@ -1098,6 +1134,7 @@ function KakeiboApp() {
         id: entryId, categoryId: catId, date: enDate, amount: absAmount,
         type: enType, tag: enTag, memo: enMemo.trim(), method: enMethod, pending: enPending,
       };
+      if (KakeiboAPI.supports("entries", "formula")) updated.formula = enteredFormula(enAmount);
       setEntries((prev) => prev.map((e) => (e.id === entryId ? updated : e)));
       saveEntry(updated);
       closeEntry();
@@ -1109,12 +1146,12 @@ function KakeiboApp() {
       id: KakeiboAPI.newId("e_"), categoryId: catId, date: enDate, amount: absAmount,
       type: enType, tag: enTag, memo: enMemo.trim(), method: enMethod, pending: enPending,
     };
+    if (KakeiboAPI.supports("entries", "formula")) created.formula = enteredFormula(enAmount);
     setEntries((prev) => [...prev, created]);
     saveEntry(created);
-    setEnMemo(""); setEnAmount(""); setEnError("");
-    // 連続入力のときだけ金額欄へ戻す。シートを開いた直後は
-    // キーボードを出さず、金額欄を押してから出るようにしている
-    if (amountRef.current) amountRef.current.focus();
+    // 1件入れて閉じる使い方が多いので、記録したらシートを閉じる。
+    // もともとは連続入力のために開いたままにしていた
+    closeEntry();
     flash(`${Number(enDate.slice(5, 7))}/${Number(enDate.slice(8, 10))}　${enType === "income" ? "収入 " : ""}${yen(absAmount)} を記録しました`);
   }
 
@@ -1909,7 +1946,7 @@ function KakeiboApp() {
                           <button className="kb-row" key={e.id} onClick={() => openEntryEdit(catById(e.catId), e)}>
                             <div className="kb-dot" style={{ background: e.color }}>{e.catName.slice(0, 1)}</div>
                             <div className="kb-rowmain">
-                              <div className="kb-rowtitle">{entryTitle(e)}</div>
+                              <EntryTitle e={e} />
                               <div className="kb-rowsub">{e.method}</div>
                             </div>
                             <span className="kb-amount" style={amountStyle(e)}>
@@ -2177,7 +2214,7 @@ function KakeiboApp() {
                             {e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}` : "—"}
                           </span>
                           <div className="kb-rowmain">
-                            <div className="kb-rowtitle">{entryTitle(e)}</div>
+                            <EntryTitle e={e} />
                             <div className="kb-rowsub">{e.method}</div>
                           </div>
                           <span className="kb-amount" style={amountStyle(e)}>
@@ -2199,9 +2236,25 @@ function KakeiboApp() {
             <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">
-                  {entryCat.name}　{entryTarget.entryId ? "の記録を編集" : "を記録"}
+                  {entryTarget.entryId ? "記録を編集" : "記録する"}
                 </span>
                 <button className="kb-close" onClick={closeEntry} aria-label="閉じる"><X size={19} /></button>
+              </div>
+
+              {/* カテゴリはここで選べる。間違えたときや続けて別のカテゴリを
+                  入れたいときに、いちいち閉じなくて済むようにするため */}
+              <div className="kb-field">
+                <label className="kb-label">カテゴリ</label>
+                <select className="kb-input" value={entryTarget.catId}
+                        onChange={(ev) => pickEntryCat(ev.target.value)}>
+                  {GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
+                    <optgroup key={g} label={g}>
+                      {budgetCats.filter((c) => c.group === g).map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
               </div>
 
               <div className="kb-field">

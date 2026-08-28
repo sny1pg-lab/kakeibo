@@ -203,7 +203,7 @@
             };
           }),
           entries: (d.entries || []).map(function (e) {
-            return {
+            var rec = {
               id: e.id,
               categoryId: e.categoryId,
               date: e.date,
@@ -214,6 +214,9 @@
               method: e.method || '',
               pending: e.pending === true || e.pending === 'TRUE'
             };
+            // 後から足した列。Apps Script が扱えるときだけ持たせる
+            if (api.supports('entries', 'formula')) rec.formula = e.formula || '';
+            return rec;
           }),
           transfers: (d.transfers || []).map(function (t) {
             return {
