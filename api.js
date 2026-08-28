@@ -243,6 +243,7 @@
             // 常に持たせると、貼り替えていない環境でも保存のたびに送ってしまう
             if (api.supports('settlements', 'tag')) rec.tag = s.tag || '';
             if (api.supports('settlements', 'method')) rec.method = s.method || '';
+            if (api.supports('settlements', 'formula')) rec.formula = s.formula || '';
             return rec;
           }),
           // 年ごとの予算。シートを増やす前は空で返る

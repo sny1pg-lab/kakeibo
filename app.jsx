@@ -1316,7 +1316,8 @@ function KakeiboApp() {
     setTkEditId(t.id); setTkDate(t.date || ""); setTkMemo(t.memo || "");
     setTkParty(t.party || parties[0]);
     setTkConfirmDel(false); setTkMethod(t.method || methods[0]);
-    setTkAmount(String(t.amount ?? "")); setTkPending(!!t.pending); setTkError("");
+    // 式で入れた記録は式のまま出す。金額を手で打ち直せば式は消える
+    setTkAmount(t.formula || String(t.amount ?? "")); setTkPending(!!t.pending); setTkError("");
     setTkFormOpen(true);
   }
   function closeTk() { setTkFormOpen(false); setTkEditId(null); setTkError(""); setTkConfirmDel(false); backToDetail(); }
@@ -1327,6 +1328,7 @@ function KakeiboApp() {
   function extraTk() {
     const out = {};
     if (tkSupportsMethod) out.method = tkMethod;
+    if (KakeiboAPI.supports("settlements", "formula")) out.formula = enteredFormula(tkAmount);
     return out;
   }
 
@@ -2142,7 +2144,10 @@ function KakeiboApp() {
                           {t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}` : "—"}
                         </span>
                         <div className="kb-rowmain" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }}>
-                          <div className="kb-rowtitle">{t.memo}</div>
+                          <div className="kb-rowtitle">
+                            {t.memo}
+                            {t.formula ? <span className="kb-formula">{t.formula}</span> : null}
+                          </div>
                           {t.method && <div className="kb-rowsub">{t.method}</div>}
                         </div>
                         <span className="kb-amount" style={{ color: t.pending ? "var(--pending)" : t.settled ? "var(--sub)" : "var(--red)" }}>{yen(t.amount)}</span>
