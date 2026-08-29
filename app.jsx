@@ -14,8 +14,42 @@ const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = R
 /* ------------------------------------------------------------------ */
 
 const MONTH_LABELS = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
-const GROUPS = ["固定費", "自由費", "予定費"];
-const GROUP_ORDER = ["自由費", "予定費", "固定費"];
+/**
+ * グループと、その予算の持ち方。
+ *
+ * もとは「固定費＝月額」「予定費＝年額」「自由費＝残り」と、
+ * グループの名前がそのまま持ち方を決めていた。家計簿が増えて、
+ * 光熱費・生活費・娯楽費のように別の分け方をしたい家計簿が出てきたので、
+ * 名前と持ち方を切り離した。名前は家計簿ごとに自由につけられる。
+ */
+const KIND_MONTH = "月間";   // 月額をマスターにする
+const KIND_YEAR = "年間";    // 年額をマスターにする
+const KIND_REST = "残り";    // 収入から他を引いた残り。金額は持たない
+const KIND_NONE = "なし";    // 予算を置かない
+const KINDS = [KIND_MONTH, KIND_YEAR, KIND_NONE, KIND_REST];
+const KIND_LABEL = { [KIND_MONTH]: "月間予算", [KIND_YEAR]: "年間予算", [KIND_NONE]: "予算外", [KIND_REST]: "残り" };
+
+// 設定が無いときの並びと持ち方。ゆきの家計簿はこれで動いている
+const LEGACY_GROUPS = [
+  { name: "自由費", kind: KIND_REST },
+  { name: "予定費", kind: KIND_YEAR },
+  { name: "固定費", kind: KIND_MONTH },
+];
+const GROUP_ROW = "set_groups";
+
+/** 設定行の tags（"光熱費:月間,生活費:年間" の形）からグループの並びを作る。 */
+function parseGroups(tags) {
+  const out = [];
+  (tags || []).forEach((t) => {
+    const i = String(t).lastIndexOf(":");
+    if (i <= 0) return;
+    const name = t.slice(0, i).trim();
+    const kind = t.slice(i + 1).trim();
+    if (name && KINDS.indexOf(kind) >= 0 && !out.some((g) => g.name === name)) out.push({ name, kind });
+  });
+  return out.length ? out : null;
+}
+function serializeGroups(defs) { return defs.map((g) => `${g.name}:${g.kind}`); }
 
 // 立替先と支払方法は、カテゴリと同じ categories シートに置いている。
 // グループ名で見分けるだけなので、Apps Script 側は何も変えなくてよい。
@@ -44,7 +78,7 @@ const DEFAULT_METHODS = ["楽天カード", "楽天ペイ", "楽天キャッシ�
 
 // 履歴の絞り込みで、固定費のカテゴリをひとまとめに扱うための印。
 // カテゴリのidと混ざらないよう、idには使われない形にしてある。
-const HIST_FIXED = "group:固定費";
+const HIST_GROUP = "group:";
 
 // budgets シートで収入の枠を表す target。カテゴリのidとは混ざらない形にしてある
 const INCOME_TARGET = "income";
@@ -579,6 +613,122 @@ function BookSheet({ books, currentId, onPick, onAdd, onRename, onSetUrl, onRemo
   );
 }
 
+/**
+ * グループの一覧。名前と、予算の持ち方（月間・年間・予算外・残り）を決める。
+ *
+ * もとはグループの名前がそのまま持ち方を決めていたが、
+ * 家計簿ごとに分け方が違うので、名前と持ち方を切り離した。
+ */
+function GroupList({ defs, useCount, onSave }) {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [confirming, setConfirming] = useState(null);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState(KIND_YEAR);
+  const [error, setError] = useState("");
+
+  function reset() {
+    setAdding(false); setEditing(null); setConfirming(null);
+    setName(""); setKind(KIND_YEAR); setError("");
+  }
+  function submitAdd() {
+    const n = name.trim();
+    if (!n) { setError("名前を入れてください。"); return; }
+    if (defs.some((g) => g.name === n)) { setError("同じ名前がすでにあります。"); return; }
+    onSave([...defs, { name: n, kind }]);
+    reset();
+  }
+  function submitEdit() {
+    const n = name.trim();
+    if (!n) { setError("名前を入れてください。"); return; }
+    if (defs.some((g) => g.name === n && g.name !== editing)) { setError("同じ名前がすでにあります。"); return; }
+    onSave(defs.map((g) => (g.name === editing ? { name: n, kind } : g)), editing, n);
+    reset();
+  }
+  function submitDelete(g) {
+    if (useCount(g.name) > 0) { setError(`${g.name}にはカテゴリがあるため消せません。`); setConfirming(null); return; }
+    onSave(defs.filter((x) => x.name !== g.name));
+    reset();
+  }
+
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div className="kb-section-label">グループ</div>
+      <div className="kb-card" style={{ background: "#FAFAFB" }}>
+        {defs.map((g) => {
+          const used = useCount(g.name);
+          return (
+            <div className="kb-row" key={g.name} style={{ cursor: "default" }}>
+              {editing === g.name ? (
+                <div className="kb-rowmain">
+                  <input className="kb-input" value={name} onChange={(ev) => setName(ev.target.value)} />
+                  <div className="kb-seg" style={{ marginTop: 6 }}>
+                    {KINDS.map((k) => (
+                      <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{KIND_LABEL[k]}</button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="kb-rowmain">
+                  <div className="kb-rowtitle">{g.name}</div>
+                  <div className="kb-rowsub">
+                    {KIND_LABEL[g.kind]}・{used > 0 ? `カテゴリ${used}件` : "カテゴリなし"}
+                  </div>
+                </div>
+              )}
+              <div className="kb-rowright">
+                {editing === g.name ? (
+                  <>
+                    <button className="kb-iconbtn" onClick={submitEdit} aria-label="保存"><Check size={15} /></button>
+                    <button className="kb-iconbtn" onClick={reset} aria-label="取消"><X size={14} /></button>
+                  </>
+                ) : confirming === g.name ? (
+                  <>
+                    <button className="kb-iconbtn" style={{ color: "var(--red)" }} onClick={() => submitDelete(g)} aria-label="削除を確定"><Check size={15} /></button>
+                    <button className="kb-iconbtn" onClick={() => setConfirming(null)} aria-label="取消"><X size={14} /></button>
+                  </>
+                ) : (
+                  <>
+                    <button className="kb-iconbtn" onClick={() => { reset(); setEditing(g.name); setName(g.name); setKind(g.kind); }}
+                            aria-label={`${g.name}を編集`}><Pencil size={14} /></button>
+                    {defs.length > 1 && (
+                      <button className="kb-iconbtn" onClick={() => { reset(); setConfirming(g.name); }}
+                              aria-label={`${g.name}を削除`}><Trash2 size={14} /></button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="kb-note">
+        並んでいる順に画面へ出ます。月間予算は月額、年間予算は年額で持ちます。
+        予算外は金額を置きません。残りは、収入から他をすべて引いた額が入ります。
+      </div>
+      {error && <div className="kb-err">{error}</div>}
+      {adding ? (
+        <div style={{ marginTop: 9 }}>
+          <input className="kb-input" value={name} onChange={(ev) => setName(ev.target.value)} placeholder="グループ名を入力" />
+          <div className="kb-seg" style={{ marginTop: 8 }}>
+            {KINDS.map((k) => (
+              <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{KIND_LABEL[k]}</button>
+            ))}
+          </div>
+          <div className="kb-btn-row" style={{ marginTop: 9 }}>
+            <button className="kb-btn ghost" onClick={reset}>やめる</button>
+            <button className="kb-btn" onClick={submitAdd}>追加</button>
+          </div>
+        </div>
+      ) : (
+        <button className="kb-btn" style={{ marginTop: 9 }} onClick={() => { reset(); setAdding(true); }}>
+          グループを追加
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SetupScreen({ onSave }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -608,29 +758,63 @@ function SetupScreen({ onSave }) {
 /**
  * 予算タブ。手書きの一覧表と同じ並びで見せる。
  *
- * 上が月の部（固定費の各件・予定費・自由費）、下が年の部（予定費の各件）。
- * 収入を起点にして、固定費と予定費を引いた残りが自由費になるので、
- * 月の合計は必ず収入と一致する。
+ * 上が月の部（月間予算の各件・年間予算のまとめ・残り）、下が年の部（年間予算の各件）。
+ * 収入を起点にして、月間と年間を引いた残りが「残り」のグループに入る。
+ * 残りのグループが無い家計簿では、引いた額を「余り」として出す。
+ * 予算を置かないグループは、一番下に名前だけ並べる。
  */
-function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
-  const fixed = cats.filter((c) => c.group === "固定費");
-  const planned = cats.filter((c) => c.group === "予定費");
-  const free = cats.filter((c) => c.group === "自由費");
+function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
+  const inGroup = (name) => cats.filter((c) => c.group === name);
+  const groupsOf = (kind) => groupDefs.filter((g) => g.kind === kind);
+  const catsOf = (kind) => groupsOf(kind).flatMap((g) => inGroup(g.name));
 
-  const Row = ({ label, amount, method, memo, onClick, derived, strong }) => (
+  const monthCats = catsOf(KIND_MONTH);
+  const yearCats = catsOf(KIND_YEAR);
+  const restCats = catsOf(KIND_REST);
+  const noneCats = catsOf(KIND_NONE);
+  // グループに名前を付けている家計簿では、1つでも見出しを出す。
+  // 設定していない家計簿（ゆき）では、月＝固定費・年＝予定費と決まっているので出さない
+  const showHead = (kind) => named || groupsOf(kind).filter((g) => inGroup(g.name).length).length > 1;
+
+  const Row = ({ label, amount, memo, onClick, derived, strong }) => (
     <button className="kb-row kb-bgrow" onClick={onClick} disabled={!onClick}>
       <div className="kb-rowmain">
         <div className="kb-rowtitle" style={strong ? { fontWeight: 700 } : undefined}>{label}</div>
-        {/* 引き落とし先もメモも無い行にも同じ高さを持たせて、一覧の行を揃える */}
         {/* 引き落とし先は一覧に出さない（編集シートでは設定できる）。
             メモが無い行にも同じ高さを持たせて、一覧の行を揃える */}
         <div className="kb-rowsub">{memo || "\u00A0"}</div>
       </div>
       <span className="kb-amount" style={derived ? { color: "var(--pending)" } : undefined}>
-        {yenExact(amount)}
+        {amount === null ? "\u2014" : yenExact(amount)}
       </span>
       {onClick ? <ChevronRight size={17} className="kb-chev" /> : <span style={{ width: 17 }} />}
     </button>
+  );
+
+  /** グループごとに見出しを挟みながらカテゴリを並べる。 */
+  const Section = ({ kind, amountOf, editKind }) => (
+    <>
+      {groupsOf(kind).map((g) => {
+        const list = inGroup(g.name);
+        if (!list.length) return null;
+        return (
+          <React.Fragment key={g.name}>
+            {showHead(kind) && <div className="kb-section-label sub">{g.name}</div>}
+            <div className="kb-card">
+              {list.map((c) => (
+                <Row
+                  key={c.id}
+                  label={c.name}
+                  amount={amountOf(c)}
+                  memo={plan.per[c.id] ? plan.per[c.id].memo : ""}
+                  onClick={() => onEdit({ target: c.id, label: c.name, kind: editKind })}
+                />
+              ))}
+            </div>
+          </React.Fragment>
+        );
+      })}
+    </>
   );
 
   return (
@@ -640,48 +824,40 @@ function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
         <Row
           label="毎月の収入"
           amount={plan.income.monthly}
-          method={plan.income.method}
           memo={plan.income.memo}
           strong
           onClick={() => onEdit({ target: INCOME_TARGET, label: "毎月の収入", kind: "income" })}
         />
       </div>
       <div className="kb-note">
-        この金額を固定費と予定費に割り振り、残りが自由費になります。年間では {yenExact(plan.income.annual)} です。
+        {plan.hasRest
+          ? `この金額を月間予算と年間予算に割り振り、残りが${restCats.length ? restCats[0].name : "残り"}になります。`
+          : "この金額と予算の合計との差が、下の余りになります。"}
+        年間では {yenExact(plan.income.annual)} です。
       </div>
 
       <div className="kb-section-label">月</div>
-      <div className="kb-card">
-        {fixed.map((c) => (
-          <Row
-            key={c.id}
-            label={c.name}
-            amount={plan.per[c.id] ? plan.per[c.id].monthly : 0}
-            method={plan.per[c.id] ? plan.per[c.id].method : ""}
-            memo={plan.per[c.id] ? plan.per[c.id].memo : ""}
-            onClick={() => onEdit({ target: c.id, label: c.name, kind: "monthly" })}
-          />
-        ))}
-        {free.map((c) => (
-          <Row
-            key={c.id}
-            label={c.name}
-            amount={plan.per[c.id] ? plan.per[c.id].monthly : 0}
-            method={plan.per[c.id] ? plan.per[c.id].method : ""}
-            memo={(plan.per[c.id] && plan.per[c.id].memo) || "収入から固定費と予定費を引いた残り"}
-            derived
-            onClick={() => onEdit({ target: c.id, label: c.name, kind: "note" })}
-          />
-        ))}
-        {planned.length > 0 && (
-          <Row
-            label="予定費"
-            amount={plan.plannedAnnual / 12}
-            memo="下の年間予算の合計を12で割った額"
-            derived
-          />
-        )}
-      </div>
+      <Section kind={KIND_MONTH} amountOf={(c) => (plan.per[c.id] ? plan.per[c.id].monthly : 0)} editKind="monthly" />
+      {(yearCats.length > 0 || restCats.length > 0 || !plan.hasRest) && (
+        <div className="kb-card">
+          {restCats.map((c) => (
+            <Row
+              key={c.id}
+              label={c.name}
+              amount={plan.per[c.id] ? plan.per[c.id].monthly : 0}
+              memo={(plan.per[c.id] && plan.per[c.id].memo) || "収入から月間予算と年間予算を引いた残り"}
+              derived
+              onClick={() => onEdit({ target: c.id, label: c.name, kind: "note" })}
+            />
+          ))}
+          {yearCats.length > 0 && (
+            <Row label="年間予算" amount={plan.yearAnnual / 12} memo="下の年間予算の合計を12で割った額" derived />
+          )}
+          {!plan.hasRest && (
+            <Row label="余り" amount={plan.restAnnual / 12} memo="収入から予算の合計を引いた額" derived />
+          )}
+        </div>
+      )}
 
       <div className="kb-card" style={{ marginTop: 10 }}>
         <div className="kb-bgtotal">
@@ -694,34 +870,39 @@ function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
         </div>
       </div>
 
-      <div className="kb-section-label">年（予定費）</div>
-      <div className="kb-card">
-        {planned.length === 0 ? (
-          <div className="kb-empty">予定費のカテゴリがありません</div>
-        ) : (
-          planned.map((c) => (
-            <Row
-              key={c.id}
-              label={c.name}
-              amount={plan.per[c.id] ? plan.per[c.id].annual : 0}
-              method={plan.per[c.id] ? plan.per[c.id].method : ""}
-              memo={plan.per[c.id] ? plan.per[c.id].memo : ""}
-              onClick={() => onEdit({ target: c.id, label: c.name, kind: "annual" })}
-            />
-          ))
-        )}
-      </div>
+      <div className="kb-section-label">年</div>
+      {yearCats.length === 0 ? (
+        <div className="kb-card"><div className="kb-empty">年間予算のカテゴリがありません</div></div>
+      ) : (
+        <Section kind={KIND_YEAR} amountOf={(c) => (plan.per[c.id] ? plan.per[c.id].annual : 0)} editKind="annual" />
+      )}
 
-      <div className="kb-card" style={{ marginTop: 10 }}>
-        <div className="kb-bgtotal">
-          <span>合計（年）</span>
-          <b>{yenExact(plan.plannedAnnual)}</b>
+      {yearCats.length > 0 && (
+        <div className="kb-card" style={{ marginTop: 10 }}>
+          <div className="kb-bgtotal">
+            <span>合計（年）</span>
+            <b>{yenExact(plan.yearAnnual)}</b>
+          </div>
+          <div className="kb-bgtotal sub">
+            <span>÷12</span>
+            <b>{yenExact(plan.yearAnnual / 12)}</b>
+          </div>
         </div>
-        <div className="kb-bgtotal sub">
-          <span>÷12</span>
-          <b>{yenExact(plan.plannedAnnual / 12)}</b>
-        </div>
-      </div>
+      )}
+
+      {noneCats.length > 0 && (
+        <>
+          <div className="kb-section-label">予算外</div>
+          <div className="kb-card">
+            {noneCats.map((c) => (
+              <Row key={c.id} label={c.name} amount={null}
+                   memo={plan.per[c.id] ? plan.per[c.id].memo : ""}
+                   onClick={() => onEdit({ target: c.id, label: c.name, kind: "note" })} />
+            ))}
+          </div>
+          <div className="kb-note">予算を置かないカテゴリです。使った額は分析タブで見られます。</div>
+        </>
+      )}
 
       <div className="kb-note">
         {year}年の予算です。上の年を切り替えると、その年の予算を別に持てます。
@@ -795,7 +976,7 @@ function KakeiboApp() {
   const [catMode, setCatMode] = useState("add");
   const [catEditId, setCatEditId] = useState(null);
   const [fName, setFName] = useState("");
-  const [fGroup, setFGroup] = useState("自由費");
+  const [fGroup, setFGroup] = useState("");
   const [fAmount, setFAmount] = useState("");
   const [fTags, setFTags] = useState([]);
   const [fTagInput, setFTagInput] = useState("");
@@ -926,10 +1107,56 @@ function KakeiboApp() {
   /* ---- 年ごとの予算 ---- */
 
   /**
+   * この家計簿のグループと、予算の持ち方。
+   * 設定の行が無ければ、これまでどおり 自由費・予定費・固定費 で動く。
+   */
+  const groupDefs = useMemo(() => {
+    const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === GROUP_ROW);
+    return (row && parseGroups(row.tags)) || LEGACY_GROUPS;
+  }, [categories]);
+  const groupOrder = useMemo(() => groupDefs.map((g) => g.name), [groupDefs]);
+  const kindOf = useCallback((name) => {
+    const g = groupDefs.find((x) => x.name === name);
+    return g ? g.kind : KIND_NONE;
+  }, [groupDefs]);
+
+  /**
+   * グループの一覧を保存する。
+   * 名前を変えたときは、そのグループのカテゴリも新しい名前に付け替える。
+   * 付け替えないと、どのグループにも属さないカテゴリができて画面から消える。
+   */
+  function saveGroups(defs, oldName, newName) {
+    if (oldName && newName && oldName !== newName) {
+      const moved = categories
+        .filter((c) => !isMaster(c) && c.group === oldName)
+        .map((c) => Object.assign({}, c, { group: newName }));
+      if (moved.length) {
+        setCategories((p) => p.map((c) => moved.find((m) => m.id === c.id) || c));
+        moved.forEach(saveCategory);
+      }
+    }
+    writeGroups(defs);
+  }
+
+  function writeGroups(defs) {
+    const row = {
+      id: GROUP_ROW, name: "グループ", group: FEATURE_GROUP,
+      monthlyBudget: 0, annualBudget: 0, tags: serializeGroups(defs), note: "",
+    };
+    setCategories((p) => (p.some((c) => c.id === GROUP_ROW)
+      ? p.map((c) => (c.id === GROUP_ROW ? row : c))
+      : [...p, row]));
+    saveCategory(row);
+  }
+
+
+  /**
    * その年の予算を組み立てる。
    *
-   * 収入の月額を起点にして、固定費と予定費を引いた残りが自由費になる。
-   * 年額をマスターにするので、収入年額 = 固定費 + 予定費 + 自由費 がぴったり合う。
+   * グループごとに持ち方が違う。月間は月額、年間は年額をマスターにし、
+   * 予算外は金額を持たない。「残り」のグループがあれば、
+   * 収入から他をすべて引いた額がそこに入る（ゆきの自由費）。
+   * 残りのグループが無い家計簿では、引いた額を「余り」として出す。
    *
    * budgets シートが無い、またはその年の行が1件も無いときは、
    * カテゴリが持っている従来の予算をそのまま使う。貼り替え前でも画面が壊れないようにするため。
@@ -943,38 +1170,39 @@ function KakeiboApp() {
     const cats = categories.filter((c) => !isMaster(c));
     const per = {};
 
-    let fixedAnnual = 0;
-    let plannedAnnual = 0;
+    let monthAnnual = 0;    // 月間予算のグループの年額合計
+    let yearAnnual = 0;     // 年間予算のグループの年額合計
     cats.forEach((c) => {
       const row = byTarget[c.id];
-      if (c.group === "固定費") {
+      const kind = kindOf(c.group);
+      if (kind === KIND_MONTH) {
         const monthly = live ? (row ? row.monthly : 0) : (Number(c.monthlyBudget) || 0);
         per[c.id] = { monthly, annual: monthly * 12, method: row ? row.method : "", memo: row ? row.memo : "" };
-        fixedAnnual += monthly * 12;
-      } else if (c.group === "予定費") {
+        monthAnnual += monthly * 12;
+      } else if (kind === KIND_YEAR) {
         const annual = live ? (row ? row.annual : 0) : (Number(c.annualBudget) || 0);
         per[c.id] = { monthly: annual / 12, annual, method: row ? row.method : "", memo: row ? row.memo : "" };
-        plannedAnnual += annual;
+        yearAnnual += annual;
+      } else if (kind === KIND_NONE) {
+        per[c.id] = { monthly: 0, annual: 0, method: row ? row.method : "", memo: row ? row.memo : "", none: true };
       }
     });
 
-    // 収入。行が無いうちは、固定費と予定費と従来の自由費を足した額を初期値として見せる
-    const legacyFreeAnnual = cats
-      .filter((c) => c.group === "自由費")
-      .reduce((a, c) => a + (Number(c.monthlyBudget) || 0) * 12, 0);
+    // 収入。行が無いうちは、月間と年間と従来の残りを足した額を初期値として見せる
+    const restCats = cats.filter((c) => kindOf(c.group) === KIND_REST);
+    const legacyRestAnnual = restCats.reduce((a, c) => a + (Number(c.monthlyBudget) || 0) * 12, 0);
     const incomeRow = byTarget[INCOME_TARGET];
     // 行が無いうちは、Excelの予算表と同じ出し方にする。
-    // 予定費の月額を丸めてから足すので、ここでは端数が出ない
+    // 年間の月額を丸めてから足すので、ここでは端数が出ない
     const legacyIncomeMonthly =
-      fixedAnnual / 12 + legacyFreeAnnual / 12 + Math.round(plannedAnnual / 12);
+      monthAnnual / 12 + legacyRestAnnual / 12 + Math.round(yearAnnual / 12);
     const incomeMonthly = live && incomeRow ? incomeRow.monthly : legacyIncomeMonthly;
     const incomeAnnual = incomeMonthly * 12;
 
-    // 自由費は残り。複数あるときは頭のひとつに寄せる（実際には1件だけ）
-    const freeCats = cats.filter((c) => c.group === "自由費");
-    const freeAnnual = incomeAnnual - fixedAnnual - plannedAnnual;
-    freeCats.forEach((c, i) => {
-      const a = i === 0 ? freeAnnual : 0;
+    // 残りのグループがあれば、引いた額をその頭のひとつに寄せる
+    const restAnnual = incomeAnnual - monthAnnual - yearAnnual;
+    restCats.forEach((c, i) => {
+      const a = i === 0 ? restAnnual : 0;
       const row = byTarget[c.id];
       per[c.id] = { monthly: a / 12, annual: a, method: row ? row.method : "", memo: row ? row.memo : "", derived: true };
     });
@@ -984,11 +1212,13 @@ function KakeiboApp() {
       rows,
       per,
       income: { monthly: incomeMonthly, annual: incomeAnnual, method: incomeRow ? incomeRow.method : "", memo: incomeRow ? incomeRow.memo : "" },
-      fixedAnnual,
-      plannedAnnual,
-      freeAnnual,
+      monthAnnual,
+      yearAnnual,
+      // 残りのグループが無い家計簿では、これが「余り」になる
+      restAnnual,
+      hasRest: restCats.length > 0,
     };
-  }, [budgets, categories, year]);
+  }, [budgets, categories, year, kindOf]);
 
   function openBudget(t) {
     const row = budgetPlan.rows.find((b) => b.target === t.target);
@@ -1038,8 +1268,10 @@ function KakeiboApp() {
       budgetCats.forEach((c) => {
         const b = budgetPlan.per[c.id];
         if (!b) return;
-        if (c.group === "固定費") seed(c.id, "monthly", b.monthly, 0);
-        else if (c.group === "予定費") seed(c.id, "annual", 0, b.annual);
+        const k = kindOf(c.group);
+        if (k === KIND_MONTH) seed(c.id, "monthly", b.monthly, 0);
+        else if (k === KIND_YEAR) seed(c.id, "annual", 0, b.annual);
+        else if (k === KIND_NONE) seed(c.id, "annual", 0, 0);
       });
     }
 
@@ -1217,13 +1449,19 @@ function KakeiboApp() {
     return "";
   }
 
-  // 履歴の絞り込みでは、固定費は1件ずつ出さずにまとめて扱う。
+  // 履歴の絞り込みでは、月間予算のグループは1件ずつ出さずにまとめて扱う。
   // 毎月の引き落としが並ぶだけで、1件ずつ選ぶ意味が薄いため。
-  const fixedCatIds = useMemo(() => {
+  // ゆきの固定費3件、おうちの光熱費3件がこれにあたる。
+  const monthlyGroups = useMemo(
+    () => groupDefs.filter((g) => g.kind === KIND_MONTH && budgetCats.some((c) => c.group === g.name)),
+    [groupDefs, budgetCats]
+  );
+  // カテゴリのid → まとめる先のグループ名
+  const groupedCatIds = useMemo(() => {
     const m = {};
-    budgetCats.forEach((c) => { if (c.group === "固定費") m[c.id] = true; });
+    budgetCats.forEach((c) => { if (kindOf(c.group) === KIND_MONTH) m[c.id] = c.group; });
     return m;
-  }, [budgetCats]);
+  }, [budgetCats, kindOf]);
 
   const catIndex = useMemo(() => {
     const m = {};
@@ -1390,14 +1628,14 @@ function KakeiboApp() {
 
   function openCatAdd() {
     setCatMode("add"); setCatEditId(null);
-    setFName(""); setFGroup(GROUP_ORDER[0]); setFAmount(""); setFTags([]); setFTagInput("");
+    setFName(""); setFGroup(groupOrder[0] || ""); setFAmount(""); setFTags([]); setFTagInput("");
     setFNote(""); setFError("");
     setCatFormOpen(true);
   }
   function openCatEdit(cat) {
     setCatMode("edit"); setCatEditId(cat.id);
     setFName(cat.name); setFGroup(cat.group);
-    setFAmount(String(cat.group === "予定費" ? cat.annualBudget || "" : cat.monthlyBudget || ""));
+    setFAmount(String(kindOf(cat.group) === KIND_YEAR ? cat.annualBudget || "" : cat.monthlyBudget || ""));
     setFTags([...cat.tags]); setFTagInput(""); setFNote(cat.note || ""); setFError("");
     setCatFormOpen(true);
   }
@@ -1425,8 +1663,8 @@ function KakeiboApp() {
     if (catMode === "add") {
       const created = {
         id: KakeiboAPI.newId("c_"), name, group: fGroup,
-        monthlyBudget: fGroup === "予定費" ? 0 : amount,
-        annualBudget: fGroup === "予定費" ? amount : 0,
+        monthlyBudget: kindOf(fGroup) === KIND_YEAR ? 0 : amount,
+        annualBudget: kindOf(fGroup) === KIND_YEAR ? amount : 0,
         tags: [...fTags], note: fNote.trim(),
       };
       setCategories((p) => [...p, created]);
@@ -1435,8 +1673,8 @@ function KakeiboApp() {
       const base = catById(catEditId);
       const updated = {
         ...base, name, group: fGroup,
-        monthlyBudget: fGroup === "予定費" ? 0 : amount,
-        annualBudget: fGroup === "予定費" ? amount : 0,
+        monthlyBudget: kindOf(fGroup) === KIND_YEAR ? 0 : amount,
+        annualBudget: kindOf(fGroup) === KIND_YEAR ? amount : 0,
         tags: [...fTags], note: fNote.trim(),
       };
       setCategories((p) => p.map((c) => (c.id === catEditId ? updated : c)));
@@ -1449,13 +1687,13 @@ function KakeiboApp() {
         const moved = budgets
           .filter((b) => b.target === catEditId)
           .map((b) => {
-            if (fGroup === "予定費") {
+            if (kindOf(fGroup) === KIND_YEAR) {
               return Object.assign({}, b, { annual: b.annual || b.monthly * 12, monthly: 0 });
             }
-            if (fGroup === "固定費") {
+            if (kindOf(fGroup) === KIND_MONTH) {
               return Object.assign({}, b, { monthly: b.monthly || Math.round(b.annual / 12), annual: 0 });
             }
-            // 自由費は残りとして計算するので、金額は持たせない
+            // 残りは計算で出す。予算外は金額を持たない
             return Object.assign({}, b, { monthly: 0, annual: 0 });
           });
         if (moved.length) {
@@ -1700,36 +1938,38 @@ function KakeiboApp() {
   const matchesHistCat = useCallback((row) => {
     if (histCat === null) return true;
     if (histCat === "transfer") return row.kind === "transfer";
-    if (histCat === HIST_FIXED) return row.kind !== "transfer" && !!fixedCatIds[row.catId];
+    if (String(histCat).startsWith(HIST_GROUP)) {
+      return row.kind !== "transfer" && groupedCatIds[row.catId] === histCat.slice(HIST_GROUP.length);
+    }
     return row.kind !== "transfer" && row.catId === histCat;
-  }, [histCat, fixedCatIds]);
+  }, [histCat, groupedCatIds]);
 
   const histMonthTotals = useMemo(() => {
     const arr = Array(12).fill(0);
     yearEntries.forEach((e) => {
       if (histCat === "transfer") return;
-      if (histCat === HIST_FIXED) {
-        if (!fixedCatIds[e.categoryId]) return;
+      if (String(histCat).startsWith(HIST_GROUP)) {
+        if (groupedCatIds[e.categoryId] !== histCat.slice(HIST_GROUP.length)) return;
       } else if (histCat !== null && e.categoryId !== histCat) {
         return;
       }
       arr[monthIdxOf(e.date)] += signedAmount(e);
     });
     return arr;
-  }, [yearEntries, histCat, fixedCatIds]);
+  }, [yearEntries, histCat, groupedCatIds]);
 
   /** カテゴリ絞り込みのチップに出す件数。 */
   const histCatCounts = useMemo(() => {
     const m = { transfer: 0 };
-    m[HIST_FIXED] = 0;
+    monthlyGroups.forEach((g) => { m[HIST_GROUP + g.name] = 0; });
     allRows.forEach((r) => {
       if (histMonth !== null && histMonth !== "pending" && monthIdxOf(r.date) !== histMonth) return;
       if (r.kind === "transfer") { m.transfer += 1; return; }
       m[r.catId] = (m[r.catId] || 0) + 1;
-      if (fixedCatIds[r.catId]) m[HIST_FIXED] += 1;
+      if (groupedCatIds[r.catId]) m[HIST_GROUP + groupedCatIds[r.catId]] += 1;
     });
     return m;
-  }, [allRows, histMonth, fixedCatIds]);
+  }, [allRows, histMonth, groupedCatIds, monthlyGroups]);
 
   const histRows = allRows
     .filter((e) => histMonth === null || histMonth === "pending" || monthIdxOf(e.date) === histMonth)
@@ -1755,14 +1995,14 @@ function KakeiboApp() {
     const budget = anaScope === "year" ? b.annual : b.monthly;
     return { cat: c, spent, budget, color: colorOf(catIndex[c.id]) };
   }).sort((a, b) => {
-    const ga = GROUP_ORDER.indexOf(a.cat.group), gb = GROUP_ORDER.indexOf(b.cat.group);
+    const ga = groupOrder.indexOf(a.cat.group), gb = groupOrder.indexOf(b.cat.group);
     if (ga !== gb) return ga - gb;
     return catIndex[a.cat.id] - catIndex[b.cat.id];
   }), [budgetCats, monthlyTotalsOf, anaScope, anaMonth, catIndex]);
 
   const anaTotal = anaRows.reduce((a, r) => ({ spent: a.spent + r.spent, budget: a.budget + r.budget }), { spent: 0, budget: 0 });
 
-  const anaGroups = GROUP_ORDER.map((g) => {
+  const anaGroups = groupOrder.map((g) => {
     const rows = anaRows.filter((r) => r.cat.group === g);
     return {
       group: g, count: rows.length,
@@ -1979,7 +2219,8 @@ function KakeiboApp() {
               year={year}
               plan={budgetPlan}
               cats={budgetCats}
-              catIndex={catIndex}
+              groupDefs={groupDefs}
+              named={groupDefs !== LEGACY_GROUPS}
               onEdit={openBudget}
             />
           ) : tab === "record" ? (
@@ -1992,7 +2233,7 @@ function KakeiboApp() {
                   </div>
                 </div>
               ) : (
-                GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
+                groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
                   <div key={g}>
                     <div className="kb-section-label">{g}</div>
                     <div className="kb-card">
@@ -2005,7 +2246,11 @@ function KakeiboApp() {
                               {[
                                 c.tags.length > 0
                                   ? c.tags.join("・")
-                                  : `月予算 ${yenExact(budgetOf(c).monthly)}`,
+                                  : kindOf(c.group) === KIND_YEAR
+                                    ? `年間予算 ${yenExact(budgetOf(c).annual)}`
+                                    : kindOf(c.group) === KIND_NONE
+                                      ? "予算外"
+                                      : `月予算 ${yenExact(budgetOf(c).monthly)}`,
                                 c.note,
                               ].filter(Boolean).join("　")}
                             </div>
@@ -2061,7 +2306,7 @@ function KakeiboApp() {
               {histMonth !== "pending" && (
                 <div className="kb-chips" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button className={`kb-tagchip ${histCat === null ? "on" : ""}`} onClick={() => setHistCat(null)}>すべて</button>
-                  {budgetCats.filter((c) => c.group !== "固定費").map((c) => {
+                  {budgetCats.filter((c) => !groupedCatIds[c.id]).map((c) => {
                     const n = histCatCounts[c.id] || 0;
                     return (
                       <button
@@ -2073,14 +2318,18 @@ function KakeiboApp() {
                       </button>
                     );
                   })}
-                  {budgetCats.some((c) => c.group === "固定費") && (
-                    <button
-                      className={`kb-tagchip ${histCat === HIST_FIXED ? "on" : ""} ${!histCatCounts[HIST_FIXED] ? "empty" : ""}`}
-                      onClick={() => setHistCat(histCat === HIST_FIXED ? null : HIST_FIXED)}
-                    >
-                      固定費{histCatCounts[HIST_FIXED] ? ` ${histCatCounts[HIST_FIXED]}` : ""}
-                    </button>
-                  )}
+                  {monthlyGroups.map((g) => {
+                    const key = HIST_GROUP + g.name;
+                    return (
+                      <button
+                        key={key}
+                        className={`kb-tagchip ${histCat === key ? "on" : ""} ${!histCatCounts[key] ? "empty" : ""}`}
+                        onClick={() => setHistCat(histCat === key ? null : key)}
+                      >
+                        {g.name}{histCatCounts[key] ? ` ${histCatCounts[key]}` : ""}
+                      </button>
+                    );
+                  })}
                   {uses.transfer && (
                     <button
                       className={`kb-tagchip ${histCat === "transfer" ? "on" : ""} ${!histCatCounts.transfer ? "empty" : ""}`}
@@ -2260,7 +2509,7 @@ function KakeiboApp() {
                       {anaRows.filter((r) => r.cat.group === group).map(({ cat, spent, budget, color }) => {
                         // 月別のとき、自由費以外は月の予算が実感と合わないので
                         // 残と超過は出さず、使った額だけを見せる
-                        const showBudget = anaScope === "year" || cat.group === "自由費";
+                        const showBudget = anaScope === "year" || kindOf(cat.group) === KIND_REST;
                         // 予算0のカテゴリも、使っていれば超過として出す。
                         // budget > 0 を条件に入れていたころは「残 ¥161,238」と出て逆に見えた
                         const over = showBudget && spent > budget;
@@ -2492,7 +2741,7 @@ function KakeiboApp() {
                 <label className="kb-label">カテゴリ</label>
                 <select className="kb-input" value={entryTarget.catId}
                         onChange={(ev) => pickEntryCat(ev.target.value)}>
-                  {GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
+                  {groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
                     <optgroup key={g} label={g}>
                       {budgetCats.filter((c) => c.group === g).map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
@@ -2560,7 +2809,7 @@ function KakeiboApp() {
                   )}
                 </div>
               ) : (
-                entryCat.group === "固定費" && budgetOf(entryCat).monthly > 0 && (
+                kindOf(entryCat.group) === KIND_MONTH && budgetOf(entryCat).monthly > 0 && (
                   <div className="kb-btn-row" style={{ marginTop: 9 }}>
                     <button className="kb-btn ghost" onClick={() => fillTwelveMonths(entryCat)}>
                       <CalendarPlus size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
@@ -2724,7 +2973,7 @@ function KakeiboApp() {
                   <div className="kb-field">
                     <label className="kb-label">グループ</label>
                     <div className="kb-seg">
-                      {GROUP_ORDER.map((g) => (
+                      {groupOrder.map((g) => (
                         <button key={g} className={fGroup === g ? "on" : ""} onClick={() => pickGroup(g)}>{g}</button>
                       ))}
                     </div>
@@ -2737,8 +2986,8 @@ function KakeiboApp() {
                     <div className="kb-note">金額は予算タブで設定します。</div>
                   ) : (
                     <div className="kb-field">
-                      <label className="kb-label">{fGroup === "予定費" ? "年間予算（円）" : "月予算（円）"}</label>
-                      <input className="kb-input" type="number" inputMode="numeric" value={fAmount} onChange={(ev) => setFAmount(ev.target.value)} placeholder={fGroup === "予定費" ? "100000" : "10000"} />
+                      <label className="kb-label">{kindOf(fGroup) === KIND_YEAR ? "年間予算（円）" : "月予算（円）"}</label>
+                      <input className="kb-input" type="number" inputMode="numeric" value={fAmount} onChange={(ev) => setFAmount(ev.target.value)} placeholder={kindOf(fGroup) === KIND_YEAR ? "100000" : "10000"} />
                     </div>
                   )}
                   <div className="kb-field">
@@ -2776,7 +3025,7 @@ function KakeiboApp() {
                 </>
               ) : (
                 <>
-                  {GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
+                  {groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => (
                     <div key={g}>
                       <div className="kb-section-label">{g}</div>
                       <div className="kb-card" style={{ background: "#FAFAFB" }}>
@@ -2786,7 +3035,13 @@ function KakeiboApp() {
                             <div className="kb-rowmain">
                               <div className="kb-rowtitle">{c.name}</div>
                               <div className="kb-rowsub">
-                                月予算 {yenExact(budgetOf(c).monthly)}
+                                {/* 持ち方に合わせて言い方を変える。年間のカテゴリに
+                                    「月予算」と書くと、年額を12で割った額が月額に見える */}
+                                {kindOf(c.group) === KIND_YEAR
+                                  ? `年間予算 ${yenExact(budgetOf(c).annual)}`
+                                  : kindOf(c.group) === KIND_NONE
+                                    ? "予算外"
+                                    : `月予算 ${yenExact(budgetOf(c).monthly)}`}
                                 {c.tags.length > 0 ? `・内訳${c.tags.length}件` : ""}
                                 {c.note ? `　${c.note}` : ""}
                               </div>
@@ -2808,6 +3063,12 @@ function KakeiboApp() {
                     </div>
                   ))}
                   <button className="kb-btn" style={{ marginTop: 14 }} onClick={openCatAdd}>カテゴリを追加</button>
+
+                  <GroupList
+                    defs={groupDefs}
+                    useCount={(n) => budgetCats.filter((c) => c.group === n).length}
+                    onSave={saveGroups}
+                  />
 
                   {uses.settle && (
                   <MasterList

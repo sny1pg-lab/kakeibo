@@ -2,7 +2,32 @@
   // app/app.jsx
   var { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
   var MONTH_LABELS = ["1\u6708", "2\u6708", "3\u6708", "4\u6708", "5\u6708", "6\u6708", "7\u6708", "8\u6708", "9\u6708", "10\u6708", "11\u6708", "12\u6708"];
-  var GROUP_ORDER = ["\u81EA\u7531\u8CBB", "\u4E88\u5B9A\u8CBB", "\u56FA\u5B9A\u8CBB"];
+  var KIND_MONTH = "\u6708\u9593";
+  var KIND_YEAR = "\u5E74\u9593";
+  var KIND_REST = "\u6B8B\u308A";
+  var KIND_NONE = "\u306A\u3057";
+  var KINDS = [KIND_MONTH, KIND_YEAR, KIND_NONE, KIND_REST];
+  var KIND_LABEL = { [KIND_MONTH]: "\u6708\u9593\u4E88\u7B97", [KIND_YEAR]: "\u5E74\u9593\u4E88\u7B97", [KIND_NONE]: "\u4E88\u7B97\u5916", [KIND_REST]: "\u6B8B\u308A" };
+  var LEGACY_GROUPS = [
+    { name: "\u81EA\u7531\u8CBB", kind: KIND_REST },
+    { name: "\u4E88\u5B9A\u8CBB", kind: KIND_YEAR },
+    { name: "\u56FA\u5B9A\u8CBB", kind: KIND_MONTH }
+  ];
+  var GROUP_ROW = "set_groups";
+  function parseGroups(tags) {
+    const out = [];
+    (tags || []).forEach((t) => {
+      const i = String(t).lastIndexOf(":");
+      if (i <= 0) return;
+      const name = t.slice(0, i).trim();
+      const kind = t.slice(i + 1).trim();
+      if (name && KINDS.indexOf(kind) >= 0 && !out.some((g) => g.name === name)) out.push({ name, kind });
+    });
+    return out.length ? out : null;
+  }
+  function serializeGroups(defs) {
+    return defs.map((g) => `${g.name}:${g.kind}`);
+  }
   var PARTY_GROUP = "\u7ACB\u66FF\u5148";
   var METHOD_GROUP = "\u652F\u6255\u65B9\u6CD5";
   var FEATURE_GROUP = "\u8A2D\u5B9A";
@@ -16,7 +41,7 @@
   var MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP, FEATURE_GROUP];
   var DEFAULT_PARTIES = ["\u751F\u6D3B\u8CBB", "\u304A\u3044\u306C", "\u5A2F\u697D\u8CBB", "\u5BB6\u5177\u5BB6\u96FB", "\u305D\u306E\u4ED6", "KITI", "\u30A6\u30A7\u30EB\u30DC\u30F3"];
   var DEFAULT_METHODS = ["\u697D\u5929\u30AB\u30FC\u30C9", "\u697D\u5929\u30DA\u30A4", "\u697D\u5929\u30AD\u30E3\u30C3\u30B7\u30E5", "\u697D\u5929\u9280\u884C", "PayPay\u30AB\u30FC\u30C9", "PayPay\u6B8B\u9AD8", "PASMO", "\u30B9\u30BF\u30D0\u30AB\u30FC\u30C9", "NL\u30AB\u30FC\u30C9", "\u73FE\u91D1", "\u305D\u306E\u4ED6"];
-  var HIST_FIXED = "group:\u56FA\u5B9A\u8CBB";
+  var HIST_GROUP = "group:";
   var INCOME_TARGET = "income";
   function isMaster(c) {
     return MASTER_GROUPS.indexOf(c.group) >= 0;
@@ -413,6 +438,88 @@
       setAdding(true);
     } }, "\u5BB6\u8A08\u7C3F\u3092\u8FFD\u52A0")));
   }
+  function GroupList({ defs, useCount, onSave }) {
+    const [adding, setAdding] = useState(false);
+    const [editing, setEditing] = useState(null);
+    const [confirming, setConfirming] = useState(null);
+    const [name, setName] = useState("");
+    const [kind, setKind] = useState(KIND_YEAR);
+    const [error, setError] = useState("");
+    function reset() {
+      setAdding(false);
+      setEditing(null);
+      setConfirming(null);
+      setName("");
+      setKind(KIND_YEAR);
+      setError("");
+    }
+    function submitAdd() {
+      const n = name.trim();
+      if (!n) {
+        setError("\u540D\u524D\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002");
+        return;
+      }
+      if (defs.some((g) => g.name === n)) {
+        setError("\u540C\u3058\u540D\u524D\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059\u3002");
+        return;
+      }
+      onSave([...defs, { name: n, kind }]);
+      reset();
+    }
+    function submitEdit() {
+      const n = name.trim();
+      if (!n) {
+        setError("\u540D\u524D\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002");
+        return;
+      }
+      if (defs.some((g) => g.name === n && g.name !== editing)) {
+        setError("\u540C\u3058\u540D\u524D\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059\u3002");
+        return;
+      }
+      onSave(defs.map((g) => g.name === editing ? { name: n, kind } : g), editing, n);
+      reset();
+    }
+    function submitDelete(g) {
+      if (useCount(g.name) > 0) {
+        setError(`${g.name}\u306B\u306F\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308B\u305F\u3081\u6D88\u305B\u307E\u305B\u3093\u3002`);
+        setConfirming(null);
+        return;
+      }
+      onSave(defs.filter((x) => x.name !== g.name));
+      reset();
+    }
+    return /* @__PURE__ */ React.createElement("div", { style: { marginTop: 22 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u30B0\u30EB\u30FC\u30D7"), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, defs.map((g) => {
+      const used = useCount(g.name);
+      return /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: g.name, style: { cursor: "default" } }, editing === g.name ? /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: name, onChange: (ev) => setName(ev.target.value) }), /* @__PURE__ */ React.createElement("div", { className: "kb-seg", style: { marginTop: 6 } }, KINDS.map((k) => /* @__PURE__ */ React.createElement("button", { key: k, className: kind === k ? "on" : "", onClick: () => setKind(k) }, KIND_LABEL[k])))) : /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, g.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, KIND_LABEL[g.kind], "\u30FB", used > 0 ? `\u30AB\u30C6\u30B4\u30EA${used}\u4EF6` : "\u30AB\u30C6\u30B4\u30EA\u306A\u3057")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, editing === g.name ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: submitEdit, "aria-label": "\u4FDD\u5B58" }, /* @__PURE__ */ React.createElement(Check, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: reset, "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : confirming === g.name ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", style: { color: "var(--red)" }, onClick: () => submitDelete(g), "aria-label": "\u524A\u9664\u3092\u78BA\u5B9A" }, /* @__PURE__ */ React.createElement(Check, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setConfirming(null), "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          className: "kb-iconbtn",
+          onClick: () => {
+            reset();
+            setEditing(g.name);
+            setName(g.name);
+            setKind(g.kind);
+          },
+          "aria-label": `${g.name}\u3092\u7DE8\u96C6`
+        },
+        /* @__PURE__ */ React.createElement(Pencil, { size: 14 })
+      ), defs.length > 1 && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          className: "kb-iconbtn",
+          onClick: () => {
+            reset();
+            setConfirming(g.name);
+          },
+          "aria-label": `${g.name}\u3092\u524A\u9664`
+        },
+        /* @__PURE__ */ React.createElement(Trash2, { size: 14 })
+      ))));
+    })), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u4E26\u3093\u3067\u3044\u308B\u9806\u306B\u753B\u9762\u3078\u51FA\u307E\u3059\u3002\u6708\u9593\u4E88\u7B97\u306F\u6708\u984D\u3001\u5E74\u9593\u4E88\u7B97\u306F\u5E74\u984D\u3067\u6301\u3061\u307E\u3059\u3002 \u4E88\u7B97\u5916\u306F\u91D1\u984D\u3092\u7F6E\u304D\u307E\u305B\u3093\u3002\u6B8B\u308A\u306F\u3001\u53CE\u5165\u304B\u3089\u4ED6\u3092\u3059\u3079\u3066\u5F15\u3044\u305F\u984D\u304C\u5165\u308A\u307E\u3059\u3002"), error && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, error), adding ? /* @__PURE__ */ React.createElement("div", { style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: name, onChange: (ev) => setName(ev.target.value), placeholder: "\u30B0\u30EB\u30FC\u30D7\u540D\u3092\u5165\u529B" }), /* @__PURE__ */ React.createElement("div", { className: "kb-seg", style: { marginTop: 8 } }, KINDS.map((k) => /* @__PURE__ */ React.createElement("button", { key: k, className: kind === k ? "on" : "", onClick: () => setKind(k) }, KIND_LABEL[k]))), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: reset }, "\u3084\u3081\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitAdd }, "\u8FFD\u52A0"))) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn", style: { marginTop: 9 }, onClick: () => {
+      reset();
+      setAdding(true);
+    } }, "\u30B0\u30EB\u30FC\u30D7\u3092\u8FFD\u52A0"));
+  }
   function SetupScreen({ onSave }) {
     const [name, setName] = useState("");
     const [url, setUrl] = useState("");
@@ -432,61 +539,59 @@
     }
     return /* @__PURE__ */ React.createElement("div", { className: "kb-setup" }, /* @__PURE__ */ React.createElement("h1", null, "\u5BB6\u8A08\u7C3F\u306E\u8A2D\u5B9A"), /* @__PURE__ */ React.createElement("p", null, "\u5BB6\u8A08\u7C3F\u306E\u540D\u524D\u3068\u3001\u30C7\u30FC\u30BF\u306E\u4FDD\u5B58\u5148\u306B\u306A\u308BApps Script\u306E\u30A6\u30A7\u30D6\u30A2\u30D7\u30EA\u306EURL\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002\u3053\u306E\u7AEF\u672B\u306B\u8A18\u61B6\u3055\u308C\u3001\u6B21\u56DE\u304B\u3089\u306F\u805E\u304D\u307E\u305B\u3093\u3002\u3042\u3068\u304B\u3089\u5897\u3084\u305B\u307E\u3059\u3002"), /* @__PURE__ */ React.createElement("input", { value: name, onChange: (e) => setName(e.target.value), placeholder: "\u5BB6\u8A08\u7C3F\u306E\u540D\u524D" }), /* @__PURE__ */ React.createElement("input", { value: url, onChange: (e) => setUrl(e.target.value), placeholder: "https://script.google.com/macros/s/..../exec", spellCheck: false }), err && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, err), /* @__PURE__ */ React.createElement("button", { onClick: submit }, "\u4FDD\u5B58\u3057\u3066\u958B\u304F"));
   }
-  function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
-    const fixed = cats.filter((c) => c.group === "\u56FA\u5B9A\u8CBB");
-    const planned = cats.filter((c) => c.group === "\u4E88\u5B9A\u8CBB");
-    const free = cats.filter((c) => c.group === "\u81EA\u7531\u8CBB");
-    const Row = ({ label, amount, method, memo, onClick, derived, strong }) => /* @__PURE__ */ React.createElement("button", { className: "kb-row kb-bgrow", onClick, disabled: !onClick }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle", style: strong ? { fontWeight: 700 } : void 0 }, label), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, memo || "\xA0")), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: derived ? { color: "var(--pending)" } : void 0 }, yenExact(amount)), onClick ? /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" }) : /* @__PURE__ */ React.createElement("span", { style: { width: 17 } }));
+  function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
+    const inGroup = (name) => cats.filter((c) => c.group === name);
+    const groupsOf = (kind) => groupDefs.filter((g) => g.kind === kind);
+    const catsOf = (kind) => groupsOf(kind).flatMap((g) => inGroup(g.name));
+    const monthCats = catsOf(KIND_MONTH);
+    const yearCats = catsOf(KIND_YEAR);
+    const restCats = catsOf(KIND_REST);
+    const noneCats = catsOf(KIND_NONE);
+    const showHead = (kind) => named || groupsOf(kind).filter((g) => inGroup(g.name).length).length > 1;
+    const Row = ({ label, amount, memo, onClick, derived, strong }) => /* @__PURE__ */ React.createElement("button", { className: "kb-row kb-bgrow", onClick, disabled: !onClick }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle", style: strong ? { fontWeight: 700 } : void 0 }, label), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, memo || "\xA0")), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: derived ? { color: "var(--pending)" } : void 0 }, amount === null ? "\u2014" : yenExact(amount)), onClick ? /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" }) : /* @__PURE__ */ React.createElement("span", { style: { width: 17 } }));
+    const Section = ({ kind, amountOf, editKind }) => /* @__PURE__ */ React.createElement(React.Fragment, null, groupsOf(kind).map((g) => {
+      const list = inGroup(g.name);
+      if (!list.length) return null;
+      return /* @__PURE__ */ React.createElement(React.Fragment, { key: g.name }, showHead(kind) && /* @__PURE__ */ React.createElement("div", { className: "kb-section-label sub" }, g.name), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, list.map((c) => /* @__PURE__ */ React.createElement(
+        Row,
+        {
+          key: c.id,
+          label: c.name,
+          amount: amountOf(c),
+          memo: plan.per[c.id] ? plan.per[c.id].memo : "",
+          onClick: () => onEdit({ target: c.id, label: c.name, kind: editKind })
+        }
+      ))));
+    }));
     return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u53CE\u5165\uFF08\u6708\uFF09"), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement(
       Row,
       {
         label: "\u6BCE\u6708\u306E\u53CE\u5165",
         amount: plan.income.monthly,
-        method: plan.income.method,
         memo: plan.income.memo,
         strong: true,
         onClick: () => onEdit({ target: INCOME_TARGET, label: "\u6BCE\u6708\u306E\u53CE\u5165", kind: "income" })
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u3053\u306E\u91D1\u984D\u3092\u56FA\u5B9A\u8CBB\u3068\u4E88\u5B9A\u8CBB\u306B\u5272\u308A\u632F\u308A\u3001\u6B8B\u308A\u304C\u81EA\u7531\u8CBB\u306B\u306A\u308A\u307E\u3059\u3002\u5E74\u9593\u3067\u306F ", yenExact(plan.income.annual), " \u3067\u3059\u3002"), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u6708"), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, fixed.map((c) => /* @__PURE__ */ React.createElement(
+    )), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, plan.hasRest ? `\u3053\u306E\u91D1\u984D\u3092\u6708\u9593\u4E88\u7B97\u3068\u5E74\u9593\u4E88\u7B97\u306B\u5272\u308A\u632F\u308A\u3001\u6B8B\u308A\u304C${restCats.length ? restCats[0].name : "\u6B8B\u308A"}\u306B\u306A\u308A\u307E\u3059\u3002` : "\u3053\u306E\u91D1\u984D\u3068\u4E88\u7B97\u306E\u5408\u8A08\u3068\u306E\u5DEE\u304C\u3001\u4E0B\u306E\u4F59\u308A\u306B\u306A\u308A\u307E\u3059\u3002", "\u5E74\u9593\u3067\u306F ", yenExact(plan.income.annual), " \u3067\u3059\u3002"), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u6708"), /* @__PURE__ */ React.createElement(Section, { kind: KIND_MONTH, amountOf: (c) => plan.per[c.id] ? plan.per[c.id].monthly : 0, editKind: "monthly" }), (yearCats.length > 0 || restCats.length > 0 || !plan.hasRest) && /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, restCats.map((c) => /* @__PURE__ */ React.createElement(
       Row,
       {
         key: c.id,
         label: c.name,
         amount: plan.per[c.id] ? plan.per[c.id].monthly : 0,
-        method: plan.per[c.id] ? plan.per[c.id].method : "",
-        memo: plan.per[c.id] ? plan.per[c.id].memo : "",
-        onClick: () => onEdit({ target: c.id, label: c.name, kind: "monthly" })
-      }
-    )), free.map((c) => /* @__PURE__ */ React.createElement(
-      Row,
-      {
-        key: c.id,
-        label: c.name,
-        amount: plan.per[c.id] ? plan.per[c.id].monthly : 0,
-        method: plan.per[c.id] ? plan.per[c.id].method : "",
-        memo: plan.per[c.id] && plan.per[c.id].memo || "\u53CE\u5165\u304B\u3089\u56FA\u5B9A\u8CBB\u3068\u4E88\u5B9A\u8CBB\u3092\u5F15\u3044\u305F\u6B8B\u308A",
+        memo: plan.per[c.id] && plan.per[c.id].memo || "\u53CE\u5165\u304B\u3089\u6708\u9593\u4E88\u7B97\u3068\u5E74\u9593\u4E88\u7B97\u3092\u5F15\u3044\u305F\u6B8B\u308A",
         derived: true,
         onClick: () => onEdit({ target: c.id, label: c.name, kind: "note" })
       }
-    )), planned.length > 0 && /* @__PURE__ */ React.createElement(
-      Row,
-      {
-        label: "\u4E88\u5B9A\u8CBB",
-        amount: plan.plannedAnnual / 12,
-        memo: "\u4E0B\u306E\u5E74\u9593\u4E88\u7B97\u306E\u5408\u8A08\u309212\u3067\u5272\u3063\u305F\u984D",
-        derived: true
-      }
-    )), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u6708\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.monthly))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xD712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.annual)))), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u5E74\uFF08\u4E88\u5B9A\u8CBB\uFF09"), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, planned.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, "\u4E88\u5B9A\u8CBB\u306E\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308A\u307E\u305B\u3093") : planned.map((c) => /* @__PURE__ */ React.createElement(
+    )), yearCats.length > 0 && /* @__PURE__ */ React.createElement(Row, { label: "\u5E74\u9593\u4E88\u7B97", amount: plan.yearAnnual / 12, memo: "\u4E0B\u306E\u5E74\u9593\u4E88\u7B97\u306E\u5408\u8A08\u309212\u3067\u5272\u3063\u305F\u984D", derived: true }), !plan.hasRest && /* @__PURE__ */ React.createElement(Row, { label: "\u4F59\u308A", amount: plan.restAnnual / 12, memo: "\u53CE\u5165\u304B\u3089\u4E88\u7B97\u306E\u5408\u8A08\u3092\u5F15\u3044\u305F\u984D", derived: true })), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u6708\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.monthly))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xD712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.annual)))), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u5E74"), yearCats.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, "\u5E74\u9593\u4E88\u7B97\u306E\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308A\u307E\u305B\u3093")) : /* @__PURE__ */ React.createElement(Section, { kind: KIND_YEAR, amountOf: (c) => plan.per[c.id] ? plan.per[c.id].annual : 0, editKind: "annual" }), yearCats.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u5E74\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.yearAnnual))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xF712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.yearAnnual / 12)))), noneCats.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u4E88\u7B97\u5916"), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, noneCats.map((c) => /* @__PURE__ */ React.createElement(
       Row,
       {
         key: c.id,
         label: c.name,
-        amount: plan.per[c.id] ? plan.per[c.id].annual : 0,
-        method: plan.per[c.id] ? plan.per[c.id].method : "",
+        amount: null,
         memo: plan.per[c.id] ? plan.per[c.id].memo : "",
-        onClick: () => onEdit({ target: c.id, label: c.name, kind: "annual" })
+        onClick: () => onEdit({ target: c.id, label: c.name, kind: "note" })
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u5E74\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.plannedAnnual))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xF712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.plannedAnnual / 12)))), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, year, "\u5E74\u306E\u4E88\u7B97\u3067\u3059\u3002\u4E0A\u306E\u5E74\u3092\u5207\u308A\u66FF\u3048\u308B\u3068\u3001\u305D\u306E\u5E74\u306E\u4E88\u7B97\u3092\u5225\u306B\u6301\u3066\u307E\u3059\u3002 \u30AA\u30EC\u30F3\u30B8\u306E\u91D1\u984D\u306F\u8A08\u7B97\u3067\u51FA\u305F\u3082\u306E\u306A\u306E\u3067\u3001\u76F4\u63A5\u306F\u5909\u3048\u3089\u308C\u307E\u305B\u3093\u3002"));
+    ))), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u4E88\u7B97\u3092\u7F6E\u304B\u306A\u3044\u30AB\u30C6\u30B4\u30EA\u3067\u3059\u3002\u4F7F\u3063\u305F\u984D\u306F\u5206\u6790\u30BF\u30D6\u3067\u898B\u3089\u308C\u307E\u3059\u3002")), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, year, "\u5E74\u306E\u4E88\u7B97\u3067\u3059\u3002\u4E0A\u306E\u5E74\u3092\u5207\u308A\u66FF\u3048\u308B\u3068\u3001\u305D\u306E\u5E74\u306E\u4E88\u7B97\u3092\u5225\u306B\u6301\u3066\u307E\u3059\u3002 \u30AA\u30EC\u30F3\u30B8\u306E\u91D1\u984D\u306F\u8A08\u7B97\u3067\u51FA\u305F\u3082\u306E\u306A\u306E\u3067\u3001\u76F4\u63A5\u306F\u5909\u3048\u3089\u308C\u307E\u305B\u3093\u3002"));
   }
   function KakeiboApp() {
     const now = /* @__PURE__ */ new Date();
@@ -537,7 +642,7 @@
     const [catMode, setCatMode] = useState("add");
     const [catEditId, setCatEditId] = useState(null);
     const [fName, setFName] = useState("");
-    const [fGroup, setFGroup] = useState("\u81EA\u7531\u8CBB");
+    const [fGroup, setFGroup] = useState("");
     const [fAmount, setFAmount] = useState("");
     const [fTags, setFTags] = useState([]);
     const [fTagInput, setFTagInput] = useState("");
@@ -645,6 +750,38 @@
     const [bgMethod, setBgMethod] = useState("");
     const [bgMemo, setBgMemo] = useState("");
     const [bgError, setBgError] = useState("");
+    const groupDefs = useMemo(() => {
+      const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === GROUP_ROW);
+      return row && parseGroups(row.tags) || LEGACY_GROUPS;
+    }, [categories]);
+    const groupOrder = useMemo(() => groupDefs.map((g) => g.name), [groupDefs]);
+    const kindOf = useCallback((name) => {
+      const g = groupDefs.find((x) => x.name === name);
+      return g ? g.kind : KIND_NONE;
+    }, [groupDefs]);
+    function saveGroups(defs, oldName, newName) {
+      if (oldName && newName && oldName !== newName) {
+        const moved = categories.filter((c) => !isMaster(c) && c.group === oldName).map((c) => Object.assign({}, c, { group: newName }));
+        if (moved.length) {
+          setCategories((p) => p.map((c) => moved.find((m) => m.id === c.id) || c));
+          moved.forEach(saveCategory);
+        }
+      }
+      writeGroups(defs);
+    }
+    function writeGroups(defs) {
+      const row = {
+        id: GROUP_ROW,
+        name: "\u30B0\u30EB\u30FC\u30D7",
+        group: FEATURE_GROUP,
+        monthlyBudget: 0,
+        annualBudget: 0,
+        tags: serializeGroups(defs),
+        note: ""
+      };
+      setCategories((p) => p.some((c) => c.id === GROUP_ROW) ? p.map((c) => c.id === GROUP_ROW ? row : c) : [...p, row]);
+      saveCategory(row);
+    }
     const budgetPlan = useMemo(() => {
       const rows = budgets.filter((b) => b.year === year);
       const byTarget = {};
@@ -654,29 +791,32 @@
       const live = rows.length > 0;
       const cats = categories.filter((c) => !isMaster(c));
       const per = {};
-      let fixedAnnual = 0;
-      let plannedAnnual = 0;
+      let monthAnnual = 0;
+      let yearAnnual = 0;
       cats.forEach((c) => {
         const row = byTarget[c.id];
-        if (c.group === "\u56FA\u5B9A\u8CBB") {
+        const kind = kindOf(c.group);
+        if (kind === KIND_MONTH) {
           const monthly = live ? row ? row.monthly : 0 : Number(c.monthlyBudget) || 0;
           per[c.id] = { monthly, annual: monthly * 12, method: row ? row.method : "", memo: row ? row.memo : "" };
-          fixedAnnual += monthly * 12;
-        } else if (c.group === "\u4E88\u5B9A\u8CBB") {
+          monthAnnual += monthly * 12;
+        } else if (kind === KIND_YEAR) {
           const annual = live ? row ? row.annual : 0 : Number(c.annualBudget) || 0;
           per[c.id] = { monthly: annual / 12, annual, method: row ? row.method : "", memo: row ? row.memo : "" };
-          plannedAnnual += annual;
+          yearAnnual += annual;
+        } else if (kind === KIND_NONE) {
+          per[c.id] = { monthly: 0, annual: 0, method: row ? row.method : "", memo: row ? row.memo : "", none: true };
         }
       });
-      const legacyFreeAnnual = cats.filter((c) => c.group === "\u81EA\u7531\u8CBB").reduce((a, c) => a + (Number(c.monthlyBudget) || 0) * 12, 0);
+      const restCats = cats.filter((c) => kindOf(c.group) === KIND_REST);
+      const legacyRestAnnual = restCats.reduce((a, c) => a + (Number(c.monthlyBudget) || 0) * 12, 0);
       const incomeRow = byTarget[INCOME_TARGET];
-      const legacyIncomeMonthly = fixedAnnual / 12 + legacyFreeAnnual / 12 + Math.round(plannedAnnual / 12);
+      const legacyIncomeMonthly = monthAnnual / 12 + legacyRestAnnual / 12 + Math.round(yearAnnual / 12);
       const incomeMonthly = live && incomeRow ? incomeRow.monthly : legacyIncomeMonthly;
       const incomeAnnual = incomeMonthly * 12;
-      const freeCats = cats.filter((c) => c.group === "\u81EA\u7531\u8CBB");
-      const freeAnnual = incomeAnnual - fixedAnnual - plannedAnnual;
-      freeCats.forEach((c, i) => {
-        const a = i === 0 ? freeAnnual : 0;
+      const restAnnual = incomeAnnual - monthAnnual - yearAnnual;
+      restCats.forEach((c, i) => {
+        const a = i === 0 ? restAnnual : 0;
         const row = byTarget[c.id];
         per[c.id] = { monthly: a / 12, annual: a, method: row ? row.method : "", memo: row ? row.memo : "", derived: true };
       });
@@ -685,11 +825,13 @@
         rows,
         per,
         income: { monthly: incomeMonthly, annual: incomeAnnual, method: incomeRow ? incomeRow.method : "", memo: incomeRow ? incomeRow.memo : "" },
-        fixedAnnual,
-        plannedAnnual,
-        freeAnnual
+        monthAnnual,
+        yearAnnual,
+        // 残りのグループが無い家計簿では、これが「余り」になる
+        restAnnual,
+        hasRest: restCats.length > 0
       };
-    }, [budgets, categories, year]);
+    }, [budgets, categories, year, kindOf]);
     function openBudget(t) {
       const row = budgetPlan.rows.find((b) => b.target === t.target);
       const cur = t.target === INCOME_TARGET ? budgetPlan.income : budgetPlan.per[t.target] || { monthly: 0, annual: 0, method: "", memo: "" };
@@ -736,8 +878,10 @@
         budgetCats.forEach((c) => {
           const b = budgetPlan.per[c.id];
           if (!b) return;
-          if (c.group === "\u56FA\u5B9A\u8CBB") seed(c.id, "monthly", b.monthly, 0);
-          else if (c.group === "\u4E88\u5B9A\u8CBB") seed(c.id, "annual", 0, b.annual);
+          const k = kindOf(c.group);
+          if (k === KIND_MONTH) seed(c.id, "monthly", b.monthly, 0);
+          else if (k === KIND_YEAR) seed(c.id, "annual", 0, b.annual);
+          else if (k === KIND_NONE) seed(c.id, "annual", 0, 0);
         });
       }
       const all = [rec, ...extra];
@@ -885,13 +1029,17 @@
       }
       return "";
     }
-    const fixedCatIds = useMemo(() => {
+    const monthlyGroups = useMemo(
+      () => groupDefs.filter((g) => g.kind === KIND_MONTH && budgetCats.some((c) => c.group === g.name)),
+      [groupDefs, budgetCats]
+    );
+    const groupedCatIds = useMemo(() => {
       const m = {};
       budgetCats.forEach((c) => {
-        if (c.group === "\u56FA\u5B9A\u8CBB") m[c.id] = true;
+        if (kindOf(c.group) === KIND_MONTH) m[c.id] = c.group;
       });
       return m;
-    }, [budgetCats]);
+    }, [budgetCats, kindOf]);
     const catIndex = useMemo(() => {
       const m = {};
       budgetCats.forEach((c, i) => {
@@ -1077,7 +1225,7 @@
       setCatMode("add");
       setCatEditId(null);
       setFName("");
-      setFGroup(GROUP_ORDER[0]);
+      setFGroup(groupOrder[0] || "");
       setFAmount("");
       setFTags([]);
       setFTagInput("");
@@ -1090,7 +1238,7 @@
       setCatEditId(cat.id);
       setFName(cat.name);
       setFGroup(cat.group);
-      setFAmount(String(cat.group === "\u4E88\u5B9A\u8CBB" ? cat.annualBudget || "" : cat.monthlyBudget || ""));
+      setFAmount(String(kindOf(cat.group) === KIND_YEAR ? cat.annualBudget || "" : cat.monthlyBudget || ""));
       setFTags([...cat.tags]);
       setFTagInput("");
       setFNote(cat.note || "");
@@ -1131,8 +1279,8 @@
           id: KakeiboAPI.newId("c_"),
           name,
           group: fGroup,
-          monthlyBudget: fGroup === "\u4E88\u5B9A\u8CBB" ? 0 : amount,
-          annualBudget: fGroup === "\u4E88\u5B9A\u8CBB" ? amount : 0,
+          monthlyBudget: kindOf(fGroup) === KIND_YEAR ? 0 : amount,
+          annualBudget: kindOf(fGroup) === KIND_YEAR ? amount : 0,
           tags: [...fTags],
           note: fNote.trim()
         };
@@ -1144,8 +1292,8 @@
           ...base,
           name,
           group: fGroup,
-          monthlyBudget: fGroup === "\u4E88\u5B9A\u8CBB" ? 0 : amount,
-          annualBudget: fGroup === "\u4E88\u5B9A\u8CBB" ? amount : 0,
+          monthlyBudget: kindOf(fGroup) === KIND_YEAR ? 0 : amount,
+          annualBudget: kindOf(fGroup) === KIND_YEAR ? amount : 0,
           tags: [...fTags],
           note: fNote.trim()
         };
@@ -1153,10 +1301,10 @@
         saveCategory(updated);
         if (base && base.group !== fGroup) {
           const moved = budgets.filter((b) => b.target === catEditId).map((b) => {
-            if (fGroup === "\u4E88\u5B9A\u8CBB") {
+            if (kindOf(fGroup) === KIND_YEAR) {
               return Object.assign({}, b, { annual: b.annual || b.monthly * 12, monthly: 0 });
             }
-            if (fGroup === "\u56FA\u5B9A\u8CBB") {
+            if (kindOf(fGroup) === KIND_MONTH) {
               return Object.assign({}, b, { monthly: b.monthly || Math.round(b.annual / 12), annual: 0 });
             }
             return Object.assign({}, b, { monthly: 0, annual: 0 });
@@ -1419,25 +1567,29 @@
     const matchesHistCat = useCallback((row) => {
       if (histCat === null) return true;
       if (histCat === "transfer") return row.kind === "transfer";
-      if (histCat === HIST_FIXED) return row.kind !== "transfer" && !!fixedCatIds[row.catId];
+      if (String(histCat).startsWith(HIST_GROUP)) {
+        return row.kind !== "transfer" && groupedCatIds[row.catId] === histCat.slice(HIST_GROUP.length);
+      }
       return row.kind !== "transfer" && row.catId === histCat;
-    }, [histCat, fixedCatIds]);
+    }, [histCat, groupedCatIds]);
     const histMonthTotals = useMemo(() => {
       const arr = Array(12).fill(0);
       yearEntries.forEach((e) => {
         if (histCat === "transfer") return;
-        if (histCat === HIST_FIXED) {
-          if (!fixedCatIds[e.categoryId]) return;
+        if (String(histCat).startsWith(HIST_GROUP)) {
+          if (groupedCatIds[e.categoryId] !== histCat.slice(HIST_GROUP.length)) return;
         } else if (histCat !== null && e.categoryId !== histCat) {
           return;
         }
         arr[monthIdxOf(e.date)] += signedAmount(e);
       });
       return arr;
-    }, [yearEntries, histCat, fixedCatIds]);
+    }, [yearEntries, histCat, groupedCatIds]);
     const histCatCounts = useMemo(() => {
       const m = { transfer: 0 };
-      m[HIST_FIXED] = 0;
+      monthlyGroups.forEach((g) => {
+        m[HIST_GROUP + g.name] = 0;
+      });
       allRows.forEach((r) => {
         if (histMonth !== null && histMonth !== "pending" && monthIdxOf(r.date) !== histMonth) return;
         if (r.kind === "transfer") {
@@ -1445,10 +1597,10 @@
           return;
         }
         m[r.catId] = (m[r.catId] || 0) + 1;
-        if (fixedCatIds[r.catId]) m[HIST_FIXED] += 1;
+        if (groupedCatIds[r.catId]) m[HIST_GROUP + groupedCatIds[r.catId]] += 1;
       });
       return m;
-    }, [allRows, histMonth, fixedCatIds]);
+    }, [allRows, histMonth, groupedCatIds, monthlyGroups]);
     const histRows = allRows.filter((e) => histMonth === null || histMonth === "pending" || monthIdxOf(e.date) === histMonth).filter(matchesHistCat);
     const histTotal = histRows.filter((e) => e.kind !== "transfer").reduce((a, e) => a + signedAmount(e), 0);
     const historyByDate = useMemo(() => {
@@ -1468,12 +1620,12 @@
       const budget = anaScope === "year" ? b.annual : b.monthly;
       return { cat: c, spent, budget, color: colorOf(catIndex[c.id]) };
     }).sort((a, b) => {
-      const ga = GROUP_ORDER.indexOf(a.cat.group), gb = GROUP_ORDER.indexOf(b.cat.group);
+      const ga = groupOrder.indexOf(a.cat.group), gb = groupOrder.indexOf(b.cat.group);
       if (ga !== gb) return ga - gb;
       return catIndex[a.cat.id] - catIndex[b.cat.id];
     }), [budgetCats, monthlyTotalsOf, anaScope, anaMonth, catIndex]);
     const anaTotal = anaRows.reduce((a, r) => ({ spent: a.spent + r.spent, budget: a.budget + r.budget }), { spent: 0, budget: 0 });
-    const anaGroups = GROUP_ORDER.map((g) => {
+    const anaGroups = groupOrder.map((g) => {
       const rows = anaRows.filter((r) => r.cat.group === g);
       return {
         group: g,
@@ -1583,11 +1735,12 @@
         year,
         plan: budgetPlan,
         cats: budgetCats,
-        catIndex,
+        groupDefs,
+        named: groupDefs !== LEGACY_GROUPS,
         onEdit: openBudget
       }
-    ) : tab === "record" ? /* @__PURE__ */ React.createElement(React.Fragment, null, budgetCats.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, "\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308A\u307E\u305B\u3093"), "\u4E0B\u306E\u30AB\u30C6\u30B4\u30EA\u7DE8\u96C6\u304B\u3089\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002")) : GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: c.id, onClick: () => openEntryNew(c) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, [
-      c.tags.length > 0 ? c.tags.join("\u30FB") : `\u6708\u4E88\u7B97 ${yenExact(budgetOf(c).monthly)}`,
+    ) : tab === "record" ? /* @__PURE__ */ React.createElement(React.Fragment, null, budgetCats.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, "\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308A\u307E\u305B\u3093"), "\u4E0B\u306E\u30AB\u30C6\u30B4\u30EA\u7DE8\u96C6\u304B\u3089\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002")) : groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: c.id, onClick: () => openEntryNew(c) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, [
+      c.tags.length > 0 ? c.tags.join("\u30FB") : kindOf(c.group) === KIND_YEAR ? `\u5E74\u9593\u4E88\u7B97 ${yenExact(budgetOf(c).annual)}` : kindOf(c.group) === KIND_NONE ? "\u4E88\u7B97\u5916" : `\u6708\u4E88\u7B97 ${yenExact(budgetOf(c).monthly)}`,
       c.note
     ].filter(Boolean).join("\u3000"))), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })))))), uses.transfer && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u305D\u306E\u4ED6"), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("button", { className: "kb-row", onClick: openTrNew }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: "#AEB4BC" } }, /* @__PURE__ */ React.createElement(ArrowLeftRight, { size: 15 })), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, "\u632F\u66FF"), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, "PASMO\u3078\u306E\u30C1\u30E3\u30FC\u30B8\u306A\u3069\u30FB\u652F\u51FA\u306B\u306F\u542B\u3081\u307E\u305B\u3093")), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" })))), /* @__PURE__ */ React.createElement("button", { className: "kb-hint", onClick: () => {
       setManageOpen(true);
@@ -1601,7 +1754,7 @@
       },
       /* @__PURE__ */ React.createElement("span", null, l),
       /* @__PURE__ */ React.createElement("b", null, histMonthTotals[i] === 0 ? "\u2014" : histMonthTotals[i].toLocaleString("ja-JP"))
-    ))), histMonth !== "pending" && /* @__PURE__ */ React.createElement("div", { className: "kb-chips", style: { marginTop: 8, marginBottom: 0 } }, /* @__PURE__ */ React.createElement("button", { className: `kb-tagchip ${histCat === null ? "on" : ""}`, onClick: () => setHistCat(null) }, "\u3059\u3079\u3066"), budgetCats.filter((c) => c.group !== "\u56FA\u5B9A\u8CBB").map((c) => {
+    ))), histMonth !== "pending" && /* @__PURE__ */ React.createElement("div", { className: "kb-chips", style: { marginTop: 8, marginBottom: 0 } }, /* @__PURE__ */ React.createElement("button", { className: `kb-tagchip ${histCat === null ? "on" : ""}`, onClick: () => setHistCat(null) }, "\u3059\u3079\u3066"), budgetCats.filter((c) => !groupedCatIds[c.id]).map((c) => {
       const n = histCatCounts[c.id] || 0;
       return /* @__PURE__ */ React.createElement(
         "button",
@@ -1613,15 +1766,19 @@
         c.name,
         n > 0 ? ` ${n}` : ""
       );
-    }), budgetCats.some((c) => c.group === "\u56FA\u5B9A\u8CBB") && /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        className: `kb-tagchip ${histCat === HIST_FIXED ? "on" : ""} ${!histCatCounts[HIST_FIXED] ? "empty" : ""}`,
-        onClick: () => setHistCat(histCat === HIST_FIXED ? null : HIST_FIXED)
-      },
-      "\u56FA\u5B9A\u8CBB",
-      histCatCounts[HIST_FIXED] ? ` ${histCatCounts[HIST_FIXED]}` : ""
-    ), uses.transfer && /* @__PURE__ */ React.createElement(
+    }), monthlyGroups.map((g) => {
+      const key = HIST_GROUP + g.name;
+      return /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          key,
+          className: `kb-tagchip ${histCat === key ? "on" : ""} ${!histCatCounts[key] ? "empty" : ""}`,
+          onClick: () => setHistCat(histCat === key ? null : key)
+        },
+        g.name,
+        histCatCounts[key] ? ` ${histCatCounts[key]}` : ""
+      );
+    }), uses.transfer && /* @__PURE__ */ React.createElement(
       "button",
       {
         className: `kb-tagchip ${histCat === "transfer" ? "on" : ""} ${!histCatCounts.transfer ? "empty" : ""}`,
@@ -1658,7 +1815,7 @@
       width: `${anaTotal.budget > 0 ? Math.min(anaTotal.spent / anaTotal.budget * 100, 100) : 0}%`,
       background: anaTotal.spent > anaTotal.budget ? "var(--red)" : "var(--accent)"
     } }))), anaRows.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, "\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308A\u307E\u305B\u3093")) : anaGroups.map(({ group, spent }) => /* @__PURE__ */ React.createElement("div", { key: group }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label kb-grouphead" }, /* @__PURE__ */ React.createElement("span", null, group), /* @__PURE__ */ React.createElement("b", null, yen(spent))), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, anaRows.filter((r) => r.cat.group === group).map(({ cat, spent: spent2, budget, color }) => {
-      const showBudget = anaScope === "year" || cat.group === "\u81EA\u7531\u8CBB";
+      const showBudget = anaScope === "year" || kindOf(cat.group) === KIND_REST;
       const over = showBudget && spent2 > budget;
       const pct = budget > 0 ? Math.min(spent2 / budget * 100, 100) : spent2 > 0 ? 100 : 0;
       return /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: cat.id, onClick: () => openDetail("category", cat.id) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: color } }, cat.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, cat.name, cat.note && /* @__PURE__ */ React.createElement("span", { className: "kb-titlenote" }, cat.note)), showBudget && /* @__PURE__ */ React.createElement("div", { className: "kb-bar thin" }, /* @__PURE__ */ React.createElement("span", { style: { width: `${pct}%`, background: over ? "var(--red)" : color } }))), /* @__PURE__ */ React.createElement("div", { className: "kb-ana-vals" }, /* @__PURE__ */ React.createElement("div", { className: "kb-ana-spent", style: { color: over ? "var(--red)" : "var(--ink)" } }, yen(spent2)), showBudget && /* @__PURE__ */ React.createElement("div", { className: "kb-ana-rest" }, over ? "\u8D85\u904E" : "\u6B8B", " ", yen(Math.abs(budget - spent2)))), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" }));
@@ -1705,7 +1862,7 @@
         value: entryTarget.catId,
         onChange: (ev) => pickEntryCat(ev.target.value)
       },
-      GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("optgroup", { key: g, label: g }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("option", { key: c.id, value: c.id }, c.name))))
+      groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("optgroup", { key: g, label: g }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("option", { key: c.id, value: c.id }, c.name))))
     )), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("div", { className: "kb-seg" }, /* @__PURE__ */ React.createElement("button", { className: enType === "expense" ? "on" : "", onClick: () => setEnType("expense") }, "\u652F\u51FA"), /* @__PURE__ */ React.createElement("button", { className: enType === "income" ? "on" : "", onClick: () => setEnType("income") }, "\u53CE\u5165"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u91D1\u984D\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(
       AmountField,
       {
@@ -1724,7 +1881,7 @@
         max: `${year}-12-31`,
         onChange: (ev) => setEnDate(ev.target.value)
       }
-    )), entryCat.tags.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u8A33"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: enTag, onChange: (ev) => setEnTag(ev.target.value) }, entryCat.tags.map((t) => /* @__PURE__ */ React.createElement("option", { key: t, value: t }, t)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u5BB9\uFF08\u5E97\u540D\u306A\u3069\u30FB\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: enMemo, onChange: (ev) => setEnMemo(ev.target.value), placeholder: "\u7121\u5370\u826F\u54C1" })), uses.method && /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u652F\u6255\u3044\u65B9\u6CD5"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: enMethod, onChange: (ev) => setEnMethod(ev.target.value) }, withCurrent(methods, enMethod).map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m)))), uses.pending && /* @__PURE__ */ React.createElement(CheckRow, { checked: !enPending, onChange: (v) => setEnPending(!v) }, "\u78BA\u5B9A"), enError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, enError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitEntry }, entryTarget.entryId ? "\u4FDD\u5B58\u3059\u308B" : "\u8A18\u9332\u3059\u308B"), entryTarget.entryId ? /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, enConfirmDel ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => deleteEntry(entryTarget.entryId) }, "\u672C\u5F53\u306B\u524A\u9664\u3059\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setEnConfirmDel(false) }, "\u3084\u3081\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => setEnConfirmDel(true) }, "\u3053\u306E\u8A18\u9332\u3092\u524A\u9664")) : entryCat.group === "\u56FA\u5B9A\u8CBB" && budgetOf(entryCat).monthly > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => fillTwelveMonths(entryCat) }, /* @__PURE__ */ React.createElement(CalendarPlus, { size: 14, style: { verticalAlign: "-2px", marginRight: 5 } }), "\u6BCE\u6708\u540C\u984D\u306712\u30F6\u6708\u5206\u3092\u5165\u529B")))), tkFormOpen && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: closeTk }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, tkEditId ? "\u7ACB\u66FF\u3092\u7DE8\u96C6" : "\u7ACB\u66FF\u3092\u8A18\u9332"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: closeTk, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u91D1\u984D\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(AmountField, { value: tkAmount, onChange: setTkAmount })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u65E5\u4ED8"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", type: "date", value: tkDate, onChange: (ev) => setTkDate(ev.target.value) })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u533A\u5206"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: tkParty, onChange: (ev) => setTkParty(ev.target.value) }, withCurrent(parties, tkParty).map((p) => /* @__PURE__ */ React.createElement("option", { key: p, value: p }, p)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u5BB9"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: tkMemo, onChange: (ev) => setTkMemo(ev.target.value), placeholder: "\u7121\u5370\u826F\u54C1" })), tkSupportsMethod && /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u652F\u6255\u3044\u65B9\u6CD5"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: tkMethod, onChange: (ev) => setTkMethod(ev.target.value) }, withCurrent(methods, tkMethod).map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m)))), /* @__PURE__ */ React.createElement(CheckRow, { checked: !tkPending, onChange: (v) => setTkPending(!v) }, "\u78BA\u5B9A"), tkError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, tkError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitTk }, tkEditId ? "\u4FDD\u5B58\u3059\u308B" : "\u8A18\u9332\u3059\u308B"), tkEditId && /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, tkConfirmDel ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => deleteSettlement(tkEditId) }, "\u672C\u5F53\u306B\u524A\u9664\u3059\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setTkConfirmDel(false) }, "\u3084\u3081\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => setTkConfirmDel(true) }, "\u3053\u306E\u7ACB\u66FF\u3092\u524A\u9664")))), trFormOpen && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => {
+    )), entryCat.tags.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u8A33"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: enTag, onChange: (ev) => setEnTag(ev.target.value) }, entryCat.tags.map((t) => /* @__PURE__ */ React.createElement("option", { key: t, value: t }, t)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u5BB9\uFF08\u5E97\u540D\u306A\u3069\u30FB\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: enMemo, onChange: (ev) => setEnMemo(ev.target.value), placeholder: "\u7121\u5370\u826F\u54C1" })), uses.method && /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u652F\u6255\u3044\u65B9\u6CD5"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: enMethod, onChange: (ev) => setEnMethod(ev.target.value) }, withCurrent(methods, enMethod).map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m)))), uses.pending && /* @__PURE__ */ React.createElement(CheckRow, { checked: !enPending, onChange: (v) => setEnPending(!v) }, "\u78BA\u5B9A"), enError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, enError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitEntry }, entryTarget.entryId ? "\u4FDD\u5B58\u3059\u308B" : "\u8A18\u9332\u3059\u308B"), entryTarget.entryId ? /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, enConfirmDel ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => deleteEntry(entryTarget.entryId) }, "\u672C\u5F53\u306B\u524A\u9664\u3059\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setEnConfirmDel(false) }, "\u3084\u3081\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => setEnConfirmDel(true) }, "\u3053\u306E\u8A18\u9332\u3092\u524A\u9664")) : kindOf(entryCat.group) === KIND_MONTH && budgetOf(entryCat).monthly > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => fillTwelveMonths(entryCat) }, /* @__PURE__ */ React.createElement(CalendarPlus, { size: 14, style: { verticalAlign: "-2px", marginRight: 5 } }), "\u6BCE\u6708\u540C\u984D\u306712\u30F6\u6708\u5206\u3092\u5165\u529B")))), tkFormOpen && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: closeTk }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, tkEditId ? "\u7ACB\u66FF\u3092\u7DE8\u96C6" : "\u7ACB\u66FF\u3092\u8A18\u9332"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: closeTk, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u91D1\u984D\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(AmountField, { value: tkAmount, onChange: setTkAmount })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u65E5\u4ED8"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", type: "date", value: tkDate, onChange: (ev) => setTkDate(ev.target.value) })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u533A\u5206"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: tkParty, onChange: (ev) => setTkParty(ev.target.value) }, withCurrent(parties, tkParty).map((p) => /* @__PURE__ */ React.createElement("option", { key: p, value: p }, p)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u5BB9"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: tkMemo, onChange: (ev) => setTkMemo(ev.target.value), placeholder: "\u7121\u5370\u826F\u54C1" })), tkSupportsMethod && /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u652F\u6255\u3044\u65B9\u6CD5"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: tkMethod, onChange: (ev) => setTkMethod(ev.target.value) }, withCurrent(methods, tkMethod).map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m)))), /* @__PURE__ */ React.createElement(CheckRow, { checked: !tkPending, onChange: (v) => setTkPending(!v) }, "\u78BA\u5B9A"), tkError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, tkError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitTk }, tkEditId ? "\u4FDD\u5B58\u3059\u308B" : "\u8A18\u9332\u3059\u308B"), tkEditId && /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, tkConfirmDel ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => deleteSettlement(tkEditId) }, "\u672C\u5F53\u306B\u524A\u9664\u3059\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setTkConfirmDel(false) }, "\u3084\u3081\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => setTkConfirmDel(true) }, "\u3053\u306E\u7ACB\u66FF\u3092\u524A\u9664")))), trFormOpen && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => {
       setTrFormOpen(false);
       setTrEditId(null);
     } }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, trEditId ? "\u632F\u66FF\u3092\u7DE8\u96C6" : "\u632F\u66FF\u3092\u8A18\u9332"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: () => {
@@ -1771,7 +1928,7 @@
     } }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, "\u30AB\u30C6\u30B4\u30EA\u306E\u7DE8\u96C6"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: () => {
       setManageOpen(false);
       setCatFormOpen(false);
-    }, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), catFormOpen ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u30B0\u30EB\u30FC\u30D7"), /* @__PURE__ */ React.createElement("div", { className: "kb-seg" }, GROUP_ORDER.map((g) => /* @__PURE__ */ React.createElement("button", { key: g, className: fGroup === g ? "on" : "", onClick: () => pickGroup(g) }, g)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u30AB\u30C6\u30B4\u30EA\u540D"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fName, onChange: (ev) => setFName(ev.target.value), placeholder: "\u30AB\u30C6\u30B4\u30EA\u540D\u3092\u5165\u529B" })), budgetPlan.live ? /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u91D1\u984D\u306F\u4E88\u7B97\u30BF\u30D6\u3067\u8A2D\u5B9A\u3057\u307E\u3059\u3002") : /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, fGroup === "\u4E88\u5B9A\u8CBB" ? "\u5E74\u9593\u4E88\u7B97\uFF08\u5186\uFF09" : "\u6708\u4E88\u7B97\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", type: "number", inputMode: "numeric", value: fAmount, onChange: (ev) => setFAmount(ev.target.value), placeholder: fGroup === "\u4E88\u5B9A\u8CBB" ? "100000" : "10000" })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u8A33\uFF08\u8A18\u9332\u6642\u306E\u9078\u629E\u80A2\u306B\u306A\u308A\u307E\u3059\uFF09"), fTags.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-chips" }, fTags.map((t) => /* @__PURE__ */ React.createElement("span", { className: "kb-chip", key: t }, t, /* @__PURE__ */ React.createElement("button", { onClick: () => setFTags((p) => p.filter((x) => x !== t)), "aria-label": `${t}\u3092\u524A\u9664` }, /* @__PURE__ */ React.createElement(X, { size: 11 }))))), /* @__PURE__ */ React.createElement("div", { className: "kb-inline" }, /* @__PURE__ */ React.createElement(
+    }, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), catFormOpen ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u30B0\u30EB\u30FC\u30D7"), /* @__PURE__ */ React.createElement("div", { className: "kb-seg" }, groupOrder.map((g) => /* @__PURE__ */ React.createElement("button", { key: g, className: fGroup === g ? "on" : "", onClick: () => pickGroup(g) }, g)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u30AB\u30C6\u30B4\u30EA\u540D"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fName, onChange: (ev) => setFName(ev.target.value), placeholder: "\u30AB\u30C6\u30B4\u30EA\u540D\u3092\u5165\u529B" })), budgetPlan.live ? /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u91D1\u984D\u306F\u4E88\u7B97\u30BF\u30D6\u3067\u8A2D\u5B9A\u3057\u307E\u3059\u3002") : /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, kindOf(fGroup) === KIND_YEAR ? "\u5E74\u9593\u4E88\u7B97\uFF08\u5186\uFF09" : "\u6708\u4E88\u7B97\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", type: "number", inputMode: "numeric", value: fAmount, onChange: (ev) => setFAmount(ev.target.value), placeholder: kindOf(fGroup) === KIND_YEAR ? "100000" : "10000" })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5185\u8A33\uFF08\u8A18\u9332\u6642\u306E\u9078\u629E\u80A2\u306B\u306A\u308A\u307E\u3059\uFF09"), fTags.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-chips" }, fTags.map((t) => /* @__PURE__ */ React.createElement("span", { className: "kb-chip", key: t }, t, /* @__PURE__ */ React.createElement("button", { onClick: () => setFTags((p) => p.filter((x) => x !== t)), "aria-label": `${t}\u3092\u524A\u9664` }, /* @__PURE__ */ React.createElement(X, { size: 11 }))))), /* @__PURE__ */ React.createElement("div", { className: "kb-inline" }, /* @__PURE__ */ React.createElement(
       "input",
       {
         className: "kb-input",
@@ -1785,7 +1942,14 @@
         },
         placeholder: "\u5185\u8A33\u540D\u3092\u5165\u529B"
       }
-    ), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", style: { width: "auto", padding: "0 16px" }, onClick: addTag }, "\u8FFD\u52A0"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u88DC\u8DB3\uFF08\u4EFB\u610F\u30FB\u4E00\u89A7\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fNote, onChange: (ev) => setFNote(ev.target.value), placeholder: "2026/6\u301C\u958B\u59CB" })), fError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, fError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitCat }, catMode === "add" ? "\u8FFD\u52A0\u3059\u308B" : "\u4FDD\u5B58\u3059\u308B"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setCatFormOpen(false) }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, GROUP_ORDER.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: c.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, "\u6708\u4E88\u7B97 ", yenExact(budgetOf(c).monthly), c.tags.length > 0 ? `\u30FB\u5185\u8A33${c.tags.length}\u4EF6` : "", c.note ? `\u3000${c.note}` : "")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => openCatEdit(c), "aria-label": "\u7DE8\u96C6" }, /* @__PURE__ */ React.createElement(Pencil, { size: 14 })), catDeleteId === c.id ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", style: { color: "var(--red)" }, onClick: () => deleteCategory(c.id), "aria-label": "\u524A\u9664\u3092\u78BA\u5B9A" }, /* @__PURE__ */ React.createElement(Check, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(null), "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(c.id), "aria-label": "\u524A\u9664" }, /* @__PURE__ */ React.createElement(Trash2, { size: 14 })))))))), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", style: { marginTop: 14 }, onClick: openCatAdd }, "\u30AB\u30C6\u30B4\u30EA\u3092\u8FFD\u52A0"), uses.settle && /* @__PURE__ */ React.createElement(
+    ), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", style: { width: "auto", padding: "0 16px" }, onClick: addTag }, "\u8FFD\u52A0"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u88DC\u8DB3\uFF08\u4EFB\u610F\u30FB\u4E00\u89A7\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fNote, onChange: (ev) => setFNote(ev.target.value), placeholder: "2026/6\u301C\u958B\u59CB" })), fError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, fError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitCat }, catMode === "add" ? "\u8FFD\u52A0\u3059\u308B" : "\u4FDD\u5B58\u3059\u308B"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setCatFormOpen(false) }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: c.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, kindOf(c.group) === KIND_YEAR ? `\u5E74\u9593\u4E88\u7B97 ${yenExact(budgetOf(c).annual)}` : kindOf(c.group) === KIND_NONE ? "\u4E88\u7B97\u5916" : `\u6708\u4E88\u7B97 ${yenExact(budgetOf(c).monthly)}`, c.tags.length > 0 ? `\u30FB\u5185\u8A33${c.tags.length}\u4EF6` : "", c.note ? `\u3000${c.note}` : "")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => openCatEdit(c), "aria-label": "\u7DE8\u96C6" }, /* @__PURE__ */ React.createElement(Pencil, { size: 14 })), catDeleteId === c.id ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", style: { color: "var(--red)" }, onClick: () => deleteCategory(c.id), "aria-label": "\u524A\u9664\u3092\u78BA\u5B9A" }, /* @__PURE__ */ React.createElement(Check, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(null), "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(c.id), "aria-label": "\u524A\u9664" }, /* @__PURE__ */ React.createElement(Trash2, { size: 14 })))))))), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", style: { marginTop: 14 }, onClick: openCatAdd }, "\u30AB\u30C6\u30B4\u30EA\u3092\u8FFD\u52A0"), /* @__PURE__ */ React.createElement(
+      GroupList,
+      {
+        defs: groupDefs,
+        useCount: (n) => budgetCats.filter((c) => c.group === n).length,
+        onSave: saveGroups
+      }
+    ), uses.settle && /* @__PURE__ */ React.createElement(
       MasterList,
       {
         title: "\u7ACB\u66FF\u5148",
