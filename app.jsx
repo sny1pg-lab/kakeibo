@@ -22,7 +22,20 @@ const GROUP_ORDER = ["自由費", "予定費", "固定費"];
 // 予算のカテゴリと混ざらないよう、集計や一覧では必ず取り除く。
 const PARTY_GROUP = "立替先";
 const METHOD_GROUP = "支払方法";
-const MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP];
+
+// 家計簿ごとに使わない機能。これも categories シートに相乗りさせている。
+// 端末ではなくスプレッドシートに持たせるのは、同じ家計簿を2人で開くため。
+// 片方で消した機能が、もう片方の端末では出たままにならないようにしている。
+const FEATURE_GROUP = "設定";
+const FEATURE_ROW = "set_features";
+// 補足は1行に収まる長さにする。一覧の下段は伸びずに省略されるため
+const FEATURES = [
+  { key: "pending", label: "金額の確定", hint: "あとからチェックで確定にします" },
+  { key: "settle", label: "立替", hint: "立て替えたぶんを区分ごとに集めます" },
+  { key: "transfer", label: "振替", hint: "チャージなど。支出には数えません" },
+  { key: "method", label: "支払い方法", hint: "記録に引き落とし先を残します" },
+];
+const MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP, FEATURE_GROUP];
 
 // まだ一度も編集していないときに見せる中身。
 // 画面から変更した時点で、この一覧がそのまま実体としてシートに書き出される。
@@ -48,12 +61,6 @@ function withCurrent(list, value) {
 }
 const PALETTE = ["#9B59D0", "#E08A2E", "#3FA9A0", "#D8607A", "#5B8DD6", "#7FA83C", "#C7913A", "#6C7A99", "#B0553F", "#4FA36B"];
 
-const NAME_OPTIONS = {
-  固定費: ["あんしん生命", "NISA", "iDeCo"],
-  自由費: ["自由費"],
-  予定費: ["交際費", "コンタクト", "美容院", "PG", "医療費"],
-};
-const CUSTOM_NAME = "__custom__";
 const DEFAULT_TAGS = {
   自由費: ["交通費", "服飾雑貨", "美容コスメ", "外食", "その他", "収入"],
 };
@@ -788,7 +795,6 @@ function KakeiboApp() {
   const [catMode, setCatMode] = useState("add");
   const [catEditId, setCatEditId] = useState(null);
   const [fName, setFName] = useState("");
-  const [fNameChoice, setFNameChoice] = useState("");
   const [fGroup, setFGroup] = useState("自由費");
   const [fAmount, setFAmount] = useState("");
   const [fTags, setFTags] = useState([]);
@@ -1071,6 +1077,32 @@ function KakeiboApp() {
   const parties = useMemo(() => namesOf(PARTY_GROUP), [namesOf]);
   const methods = useMemo(() => namesOf(METHOD_GROUP), [namesOf]);
 
+  /* ---- この家計簿で使う機能 ---- */
+
+  /**
+   * 使わない機能は categories の1行に相乗りさせて持つ。
+   * 行が無ければ全部使う。おうちのように立替も振替も使わない家計簿があるため。
+   */
+  const uses = useMemo(() => {
+    const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === FEATURE_ROW);
+    const off = row ? row.tags : [];
+    const out = {};
+    FEATURES.forEach((f) => { out[f.key] = off.indexOf(f.key) < 0; });
+    return out;
+  }, [categories]);
+
+  function toggleUse(key, on) {
+    const off = FEATURES.map((f) => f.key).filter((k) => (k === key ? !on : !uses[k]));
+    const row = {
+      id: FEATURE_ROW, name: "使わない機能", group: FEATURE_GROUP,
+      monthlyBudget: 0, annualBudget: 0, tags: off, note: "",
+    };
+    setCategories((p) => (p.some((c) => c.id === FEATURE_ROW)
+      ? p.map((c) => (c.id === FEATURE_ROW ? row : c))
+      : [...p, row]));
+    saveCategory(row);
+  }
+
   // 支払方法は減らせるので、番号で選ぶときは範囲からはみ出さないようにする
   const methodAt = useCallback(
     (i) => methods[Math.min(i, methods.length - 1)] || "",
@@ -1260,7 +1292,9 @@ function KakeiboApp() {
     setEnMemo("");
     setEnAmount("");
     setEnType("expense");
-    setEnPending(true);  // 入力した時点では金額は未確定
+    if (!uses.method) setEnMethod("");
+    // 入力した時点では金額は未確定。確定の管理を使わない家計簿では最初から確定にする
+    setEnPending(uses.pending);
     setEnError("");
     setEnConfirmDel(false);
   }
@@ -1356,26 +1390,24 @@ function KakeiboApp() {
 
   function openCatAdd() {
     setCatMode("add"); setCatEditId(null);
-    setFName(""); setFNameChoice(""); setFGroup(GROUP_ORDER[0]); setFAmount(""); setFTags([]); setFTagInput("");
+    setFName(""); setFGroup(GROUP_ORDER[0]); setFAmount(""); setFTags([]); setFTagInput("");
     setFNote(""); setFError("");
     setCatFormOpen(true);
   }
   function openCatEdit(cat) {
     setCatMode("edit"); setCatEditId(cat.id);
-    setFName(cat.name); setFNameChoice(CUSTOM_NAME); setFGroup(cat.group);
+    setFName(cat.name); setFGroup(cat.group);
     setFAmount(String(cat.group === "予定費" ? cat.annualBudget || "" : cat.monthlyBudget || ""));
     setFTags([...cat.tags]); setFTagInput(""); setFNote(cat.note || ""); setFError("");
     setCatFormOpen(true);
   }
   function pickGroup(g) {
     setFGroup(g);
-    if (catMode === "add") { setFNameChoice(""); setFName(""); setFAmount(""); setFTags([]); }
-  }
-  function pickName(v) {
-    setFNameChoice(v);
-    if (v === CUSTOM_NAME) { setFName(""); return; }
-    setFName(v);
-    if (DEFAULT_TAGS[v]) setFTags([...DEFAULT_TAGS[v]]);
+    if (catMode === "add") {
+      setFName(""); setFAmount(""); setFTags([]);
+      // 自由費には内訳の下地を入れておく。ほかは家計簿ごとに違うので空から
+      if (DEFAULT_TAGS[g]) setFTags([...DEFAULT_TAGS[g]]);
+    }
   }
   function addTag() {
     const t = fTagInput.trim();
@@ -1839,8 +1871,13 @@ function KakeiboApp() {
     { key: "record", label: "記録", icon: PencilLine },
     { key: "history", label: "履歴", icon: ListOrdered },
     { key: "analysis", label: "分析", icon: PieChart },
-    { key: "settle", label: "立替", icon: Wallet },
+    ...(uses.settle ? [{ key: "settle", label: "立替", icon: Wallet }] : []),
   ];
+
+  // 立替を使わない家計簿に切り替えたとき、立替タブに居たままにしない
+  useEffect(() => {
+    if (!uses.settle && tab === "settle") setTab("record");
+  }, [uses.settle, tab]);
 
   /* ---- 描画 ---- */
 
@@ -1981,17 +2018,21 @@ function KakeiboApp() {
                 ))
               )}
 
-              <div className="kb-section-label">その他</div>
-              <div className="kb-card">
-                <button className="kb-row" onClick={openTrNew}>
-                  <div className="kb-dot" style={{ background: "#AEB4BC" }}><ArrowLeftRight size={15} /></div>
-                  <div className="kb-rowmain">
-                    <div className="kb-rowtitle">振替</div>
-                    <div className="kb-rowsub">PASMOへのチャージなど・支出には含めません</div>
+              {uses.transfer && (
+                <>
+                  <div className="kb-section-label">その他</div>
+                  <div className="kb-card">
+                    <button className="kb-row" onClick={openTrNew}>
+                      <div className="kb-dot" style={{ background: "#AEB4BC" }}><ArrowLeftRight size={15} /></div>
+                      <div className="kb-rowmain">
+                        <div className="kb-rowtitle">振替</div>
+                        <div className="kb-rowsub">PASMOへのチャージなど・支出には含めません</div>
+                      </div>
+                      <ChevronRight size={17} className="kb-chev" />
+                    </button>
                   </div>
-                  <ChevronRight size={17} className="kb-chev" />
-                </button>
-              </div>
+                </>
+              )}
 
               <button className="kb-hint" onClick={() => { setManageOpen(true); setCatFormOpen(false); }}>
                 <Settings size={15} />
@@ -2040,15 +2081,18 @@ function KakeiboApp() {
                       固定費{histCatCounts[HIST_FIXED] ? ` ${histCatCounts[HIST_FIXED]}` : ""}
                     </button>
                   )}
-                  <button
-                    className={`kb-tagchip ${histCat === "transfer" ? "on" : ""} ${!histCatCounts.transfer ? "empty" : ""}`}
-                    onClick={() => setHistCat(histCat === "transfer" ? null : "transfer")}
-                  >
-                    振替{histCatCounts.transfer ? ` ${histCatCounts.transfer}` : ""}
-                  </button>
+                  {uses.transfer && (
+                    <button
+                      className={`kb-tagchip ${histCat === "transfer" ? "on" : ""} ${!histCatCounts.transfer ? "empty" : ""}`}
+                      onClick={() => setHistCat(histCat === "transfer" ? null : "transfer")}
+                    >
+                      振替{histCatCounts.transfer ? ` ${histCatCounts.transfer}` : ""}
+                    </button>
+                  )}
                 </div>
               )}
 
+              {(uses.pending || pendingRows.length > 0) && (
               <button
                 className={`kb-pendingchip ${histMonth === "pending" ? "on" : ""} ${pendingRows.length === 0 ? "empty" : ""}`}
                 onClick={() => setHistMonth(histMonth === "pending" ? null : "pending")}
@@ -2058,6 +2102,7 @@ function KakeiboApp() {
                 <b>{pendingRows.length}件</b>
                 <ChevronRight size={16} className="kb-chev" />
               </button>
+              )}
               {histMonth === "pending" ? (
                 <>
                   <div className="kb-detail-total" style={{ paddingTop: 8 }}>
@@ -2486,15 +2531,19 @@ function KakeiboApp() {
                 <label className="kb-label">内容（店名など・任意）</label>
                 <input className="kb-input" value={enMemo} onChange={(ev) => setEnMemo(ev.target.value)} placeholder="無印良品" />
               </div>
-              <div className="kb-field">
-                <label className="kb-label">支払い方法</label>
-                <select className="kb-input" value={enMethod} onChange={(ev) => setEnMethod(ev.target.value)}>
-                  {withCurrent(methods, enMethod).map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-              <CheckRow checked={!enPending} onChange={(v) => setEnPending(!v)}>
-                確定
-              </CheckRow>
+              {uses.method && (
+                <div className="kb-field">
+                  <label className="kb-label">支払い方法</label>
+                  <select className="kb-input" value={enMethod} onChange={(ev) => setEnMethod(ev.target.value)}>
+                    {withCurrent(methods, enMethod).map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              )}
+              {uses.pending && (
+                <CheckRow checked={!enPending} onChange={(v) => setEnPending(!v)}>
+                  確定
+                </CheckRow>
+              )}
               {enError && <div className="kb-err">{enError}</div>}
               <button className="kb-btn" onClick={submitEntry}>
                 {entryTarget.entryId ? "保存する" : "記録する"}
@@ -2682,17 +2731,7 @@ function KakeiboApp() {
                   </div>
                   <div className="kb-field">
                     <label className="kb-label">カテゴリ名</label>
-                    <select className="kb-input" value={fNameChoice} onChange={(ev) => pickName(ev.target.value)}>
-                      <option value="" disabled>選択してください</option>
-                      {(NAME_OPTIONS[fGroup] || []).map((n) => {
-                        const taken = catMode === "add" && budgetCats.some((c) => c.name === n);
-                        return <option key={n} value={n} disabled={taken}>{taken ? `${n}（登録済み）` : n}</option>;
-                      })}
-                      <option value={CUSTOM_NAME}>その他（手入力）</option>
-                    </select>
-                    {fNameChoice === CUSTOM_NAME && (
-                      <input className="kb-input" style={{ marginTop: 8 }} value={fName} onChange={(ev) => setFName(ev.target.value)} placeholder="カテゴリ名を入力" />
-                    )}
+                    <input className="kb-input" value={fName} onChange={(ev) => setFName(ev.target.value)} placeholder="カテゴリ名を入力" />
                   </div>
                   {budgetPlan.live ? (
                     <div className="kb-note">金額は予算タブで設定します。</div>
@@ -2770,6 +2809,7 @@ function KakeiboApp() {
                   ))}
                   <button className="kb-btn" style={{ marginTop: 14 }} onClick={openCatAdd}>カテゴリを追加</button>
 
+                  {uses.settle && (
                   <MasterList
                     title="立替先"
                     hint="立替タブの区分になります。名前を変えると、これまでの記録もまとめて変わります。"
@@ -2779,7 +2819,9 @@ function KakeiboApp() {
                     onRename={(o, n) => renameMaster(PARTY_GROUP, o, n)}
                     onDelete={(n) => deleteMaster(PARTY_GROUP, n)}
                   />
+                  )}
 
+                  {uses.method && (
                   <MasterList
                     title="支払方法"
                     hint="明細と振替で選べるようになります。名前を変えると、これまでの記録もまとめて変わります。"
@@ -2789,6 +2831,34 @@ function KakeiboApp() {
                     onRename={(o, n) => renameMaster(METHOD_GROUP, o, n)}
                     onDelete={(n) => deleteMaster(METHOD_GROUP, n)}
                   />
+                  )}
+
+                  {/* 家計簿ごとに使う機能を決める。おうちのように立替も振替も
+                      使わない家計簿では、画面から丸ごと消しておく */}
+                  <div className="kb-section-label" style={{ marginTop: 22 }}>この家計簿で使うもの</div>
+                  <div className="kb-card" style={{ background: "#FAFAFB" }}>
+                    {FEATURES.map((f) => (
+                      <div className="kb-row" key={f.key} style={{ cursor: "default" }}>
+                        <div className="kb-rowmain">
+                          <div className="kb-rowtitle">{f.label}</div>
+                          <div className="kb-rowsub">{f.hint}</div>
+                        </div>
+                        <div className="kb-rowright">
+                          <button
+                            className={`kb-iconbtn ${uses[f.key] ? "on" : ""}`}
+                            onClick={() => toggleUse(f.key, !uses[f.key])}
+                            aria-label={`${f.label}を${uses[f.key] ? "使わない" : "使う"}`}
+                          >
+                            {uses[f.key] ? <Check size={16} /> : <X size={14} />}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="kb-note">
+                    外したものは画面に出なくなります。これまでの記録は消えないので、戻せばまた見られます。
+                    この設定は家計簿ごとで、同じ家計簿を開いている端末すべてに反映されます。
+                  </div>
 
                   <div className="kb-section-label" style={{ marginTop: 22 }}>保存の状態</div>
                   <div className={`kb-savebox ${sync.error ? "error" : sync.pending > 0 ? "" : "ok"}`}>

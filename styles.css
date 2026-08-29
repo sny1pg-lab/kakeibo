@@ -257,6 +257,9 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 
 .kb-iconbtn.confirm { border: 1px solid var(--pending); color: var(--pending); }
 .kb-iconbtn.confirm:active { background: #FDEED8; }
+/* 入か切かを表すボタン。オレンジは未確定の意味で使っているので、ここでは緑にする */
+.kb-iconbtn.on { border: 1px solid var(--accent); color: var(--accent); }
+.kb-iconbtn.on:active { background: #EAF6EE; }
 
 .kb-check {
   display: flex; align-items: center; gap: 9px; width: 100%; margin-bottom: 12px;
