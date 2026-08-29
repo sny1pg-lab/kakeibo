@@ -10,10 +10,17 @@
 (function (global) {
   'use strict';
 
-  var CONFIG_KEY = 'kakeibo.apiUrl';
+  // 家計簿ごとに接続先のスプレッドシートが違う。一覧と、いま選んでいるものを端末に持つ
+  var BOOKS_KEY = 'kakeibo.books';
+  var CURRENT_KEY = 'kakeibo.book';
+  // 控え・送信キュー・扱える列は家計簿ごとに分ける。混ざると別の家計簿へ書き込んでしまう
   var QUEUE_KEY = 'kakeibo.queue';
   var SNAPSHOT_KEY = 'kakeibo.snapshot';
   var COLUMNS_KEY = 'kakeibo.columns';
+  var OLD_CONFIG_KEY = 'kakeibo.apiUrl';   // 家計簿が1つだったころの接続先
+  // 引き継ぎで作る最初の家計簿の名前。app は公開リポジトリへ出るので、
+  // 人の名前は書かずに当たり障りのないものにしてある。画面から変えられる
+  var FIRST_BOOK_NAME = '個人';
   var MAX_BACKOFF_MS = 30000;
   var REQUEST_TIMEOUT_MS = 30000;
 
@@ -39,8 +46,58 @@
     try { if (store) store.removeItem(key); } catch (e) { /* 同上 */ }
   }
 
+  /* ---- 家計簿 ---- */
+
+  /** 家計簿ごとの控え置き場。id を付けて混ざらないようにする。 */
+  function bookKey(base, id) { return base + '.' + id; }
+
+  function readBooks() {
+    try {
+      var saved = JSON.parse(storeGet(BOOKS_KEY) || 'null');
+      if (Array.isArray(saved)) return saved.filter(function (b) { return b && b.id && b.url; });
+    } catch (e) { /* 壊れていたら作り直す */ }
+    return null;
+  }
+
+  /**
+   * 家計簿が1つだったころの設定を引き継ぐ。
+   * 接続先も控えも送信キューも、そのまま最初の家計簿のものとして名前を付け替える。
+   * 更新したら設定が消えていた、ということが起きないようにするため。
+   */
+  function migrate() {
+    var url = storeGet(OLD_CONFIG_KEY) || (global.KAKEIBO_API_URL || '');
+    if (!url) return [];
+    var id = 'b1';
+    ['queue', 'snapshot', 'columns'].forEach(function (n) {
+      var base = 'kakeibo.' + n;
+      var v = storeGet(base);
+      if (v !== null && v !== undefined) { storeSet(bookKey(base, id), v); storeDel(base); }
+    });
+    storeDel(OLD_CONFIG_KEY);
+    var books = [{ id: id, name: FIRST_BOOK_NAME, url: url }];
+    storeSet(BOOKS_KEY, JSON.stringify(books));
+    storeSet(CURRENT_KEY, id);
+    return books;
+  }
+
+  var books = readBooks() || migrate();
+  var bookId = (function () {
+    var id = storeGet(CURRENT_KEY);
+    if (id && books.some(function (b) { return b.id === id; })) return id;
+    return books.length ? books[0].id : '';
+  })();
+
+  function currentBook() {
+    for (var i = 0; i < books.length; i++) if (books[i].id === bookId) return books[i];
+    return null;
+  }
+  function persistBooks() {
+    storeSet(BOOKS_KEY, JSON.stringify(books));
+    storeSet(CURRENT_KEY, bookId);
+  }
+
   /* ---- 状態 ---- */
-  var apiUrl = storeGet(CONFIG_KEY) || (global.KAKEIBO_API_URL || '');
+  var apiUrl = currentBook() ? currentBook().url : '';
   var queue = [];
   var inFlight = [];   // いま送信中の変更。キューからはまだ外していない
   var sending = false;
@@ -53,10 +110,14 @@
    * 古いまま貼り替えていない場合は返ってこないので null のままになる。
    * アプリはこれを見て、新しい項目を出すかどうかを決める。
    * 起動直後から判断できるよう、前回の値を控えておく。
+   * 貼り替えの具合は家計簿ごとに違うので、これも分けて持つ。
    */
-  var serverColumns = (function () {
-    try { return JSON.parse(storeGet(COLUMNS_KEY) || 'null'); } catch (e) { return null; }
-  })();
+  var serverColumns = null;
+  function loadColumns() {
+    try { serverColumns = JSON.parse(storeGet(bookKey(COLUMNS_KEY, bookId)) || 'null'); }
+    catch (e) { serverColumns = null; }
+  }
+  loadColumns();
 
   function notify() {
     var state = {
@@ -70,7 +131,7 @@
   }
 
   function persistQueue() {
-    storeSet(QUEUE_KEY, JSON.stringify(queue));
+    if (bookId) storeSet(bookKey(QUEUE_KEY, bookId), JSON.stringify(queue));
   }
 
   /* ---- 通信 ---- */
@@ -172,13 +233,104 @@
   /* ---- 公開API ---- */
 
   var api = {
-    setUrl: function (url) {
-      var next = (url || '').trim();
-      // 別のスプレッドシートに向け直したら、前の控えは中身が合わない
-      if (next !== apiUrl) storeDel(SNAPSHOT_KEY);
-      apiUrl = next;
-      storeSet(CONFIG_KEY, apiUrl);
+    /* ---- 家計簿 ---- */
+
+    books: function () { return books.map(function (b) { return { id: b.id, name: b.name, url: b.url }; }); },
+
+    currentBookId: function () { return bookId; },
+
+    currentBookName: function () { var b = currentBook(); return b ? b.name : ''; },
+
+    /** 家計簿を足す。1つめを足した時点でそれが選ばれる。 */
+    addBook: function (name, url) {
+      var b = { id: api.newId('b'), name: (name || '').trim(), url: (url || '').trim() };
+      if (!b.name || !b.url) throw new Error('名前と接続先の両方が要ります。');
+      books.push(b);
+      if (!bookId) { bookId = b.id; apiUrl = b.url; loadColumns(); }
+      persistBooks();
       if (apiUrl) flush();
+      return b;
+    },
+
+    renameBook: function (id, name) {
+      var b = null;
+      books.forEach(function (x) { if (x.id === id) b = x; });
+      if (!b) return;
+      b.name = (name || '').trim() || b.name;
+      persistBooks();
+    },
+
+    /** 接続先を差し替える。控えは中身が合わなくなるので捨てる。 */
+    setBookUrl: function (id, url) {
+      var next = (url || '').trim();
+      if (!next) return;
+      books.forEach(function (b) {
+        if (b.id !== id || b.url === next) return;
+        b.url = next;
+        storeDel(bookKey(SNAPSHOT_KEY, id));
+        storeDel(bookKey(COLUMNS_KEY, id));
+        if (id === bookId) { apiUrl = next; serverColumns = null; }
+      });
+      persistBooks();
+    },
+
+    /**
+     * 端末の登録から外す。スプレッドシートには触れないので、
+     * 接続先を入れ直せばまた見られる。
+     */
+    removeBook: function (id) {
+      books = books.filter(function (b) { return b.id !== id; });
+      [QUEUE_KEY, SNAPSHOT_KEY, COLUMNS_KEY].forEach(function (k) { storeDel(bookKey(k, id)); });
+      if (id === bookId) {
+        bookId = books.length ? books[0].id : '';
+        queue = [];
+        apiUrl = currentBook() ? currentBook().url : '';
+        loadColumns();
+        if (bookId) api.recoverQueue();
+      }
+      persistBooks();
+      notify();
+    },
+
+    /**
+     * 別の家計簿へ切り替える。
+     *
+     * 未送信が残ったまま切り替えると、どの家計簿へ送るはずだったのか分からなくなる。
+     * 送り終わるのを待ってから切り替え、送れなければ切り替えずに理由を返す。
+     */
+    switchTo: function (id) {
+      var target = null;
+      books.forEach(function (b) { if (b.id === id) target = b; });
+      if (!target) return Promise.reject(new Error('その家計簿は登録されていません。'));
+      if (id === bookId) return Promise.resolve();
+
+      function activate() {
+        persistQueue();
+        bookId = id;
+        apiUrl = target.url;
+        queue = [];
+        loadColumns();
+        persistBooks();
+        api.recoverQueue();
+        notify();
+      }
+
+      if (!queue.length) { activate(); return Promise.resolve(); }
+
+      api.retry();
+      return new Promise(function (resolve, reject) {
+        var stop = null, done = false;
+        function finish(fn, arg) {
+          if (done) return;
+          done = true;
+          setTimeout(function () { if (stop) stop(); }, 0);
+          fn(arg);
+        }
+        stop = api.subscribe(function (st) {
+          if (st.pending === 0) { activate(); finish(resolve); }
+          else if (st.error && !st.sending) { finish(reject, new Error(st.error)); }
+        });
+      });
     },
 
     getUrl: function () { return apiUrl; },
@@ -188,8 +340,8 @@
       return request({ method: 'GET' }).then(function (json) {
         var d = json.data || {};
         serverColumns = json.columns || null;
-        if (serverColumns) storeSet(COLUMNS_KEY, JSON.stringify(serverColumns));
-        else storeDel(COLUMNS_KEY);
+        if (serverColumns) storeSet(bookKey(COLUMNS_KEY, bookId), JSON.stringify(serverColumns));
+        else storeDel(bookKey(COLUMNS_KEY, bookId));
         return {
           categories: (d.categories || []).map(function (c) {
             return {
@@ -311,7 +463,8 @@
 
     /** 未送信の控え（localStorageが使えた場合のみ中身がある）。 */
     recoverQueue: function () {
-      var raw = storeGet(QUEUE_KEY);
+      if (!bookId) return 0;
+      var raw = storeGet(bookKey(QUEUE_KEY, bookId));
       if (!raw) return 0;
       try {
         var saved = JSON.parse(raw);
@@ -333,20 +486,23 @@
      * 保存領域が使えない環境では null が返るだけで、これまでどおり動く。
      */
     readSnapshot: function () {
-      var raw = storeGet(SNAPSHOT_KEY);
+      if (!bookId) return null;
+      var raw = storeGet(bookKey(SNAPSHOT_KEY, bookId));
       if (!raw) return null;
       try {
         var saved = JSON.parse(raw);
         if (!saved || !saved.data) return null;
         return saved;   // { savedAt, data }
       } catch (e) {
-        storeDel(SNAPSHOT_KEY);
+        storeDel(bookKey(SNAPSHOT_KEY, bookId));
         return null;
       }
     },
 
     writeSnapshot: function (data) {
-      storeSet(SNAPSHOT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data: data }));
+      if (!bookId) return;
+      storeSet(bookKey(SNAPSHOT_KEY, bookId),
+        JSON.stringify({ savedAt: new Date().toISOString(), data: data }));
     },
 
     newId: function (prefix) {

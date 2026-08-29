@@ -76,6 +76,9 @@ const X = (p) => <Svg {...p}><path d="M18 6 6 18" /><path d="m6 6 12 12" /></Svg
 const Check = (p) => <Svg {...p}><path d="M20 6 9 17l-5-5" /></Svg>;
 const ChevronRight = (p) => <Svg {...p}><path d="m9 18 6-6-6-6" /></Svg>;
 const ChevronLeft = (p) => <Svg {...p}><path d="m15 18-6-6 6-6" /></Svg>;
+const ChevronDown = (p) => <Svg {...p}><path d="m6 9 6 6 6-6" /></Svg>;
+const RefreshCw = (p) => <Svg {...p}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></Svg>;
+const BookOpen = (p) => <Svg {...p}><path d="M12 7v14" /><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" /></Svg>;
 const Trash2 = (p) => <Svg {...p}><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M10 11v6" /><path d="M14 11v6" /></Svg>;
 const Pencil = (p) => <Svg {...p}><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></Svg>;
 const Loader2 = (p) => <Svg {...p}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></Svg>;
@@ -440,21 +443,154 @@ function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete })
   );
 }
 
+/** 接続先のURLとして正しい形か。 */
+function validUrl(v) {
+  return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(v);
+}
+
+/**
+ * 家計簿の切り替えと登録。
+ *
+ * 家計簿ごとに接続先のスプレッドシートが違う。端末に登録したものだけが並ぶので、
+ * 教えていないURLの家計簿はこの端末からは開けない。
+ * 「端末から外す」はこの端末の登録を消すだけで、スプレッドシートには触れない。
+ */
+function BookSheet({ books, currentId, onPick, onAdd, onRename, onSetUrl, onRemove, onClose }) {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [confirming, setConfirming] = useState(null);
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState("");
+
+  function reset() {
+    setAdding(false); setEditing(null); setConfirming(null);
+    setName(""); setUrl(""); setError("");
+  }
+  function submitAdd() {
+    if (!name.trim()) { setError("名前を入れてください。"); return; }
+    if (!validUrl(url.trim())) { setError("Apps ScriptのウェブアプリのURL（/exec で終わるもの）を貼り付けてください。"); return; }
+    if (books.some((b) => b.name === name.trim())) { setError("同じ名前がすでにあります。"); return; }
+    onAdd(name.trim(), url.trim());
+    reset();
+  }
+  function submitEdit() {
+    if (!name.trim()) { setError("名前を入れてください。"); return; }
+    const u = url.trim();
+    if (u && !validUrl(u)) { setError("接続先のURLの形が違います。"); return; }
+    onRename(editing, name.trim());
+    if (u) onSetUrl(editing, u);
+    reset();
+  }
+
+  return (
+    <div className="kb-sheet-backdrop" onClick={onClose}>
+      <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
+        <div className="kb-sheet-head">
+          <span className="kb-sheet-title">家計簿</span>
+          <button className="kb-close" onClick={onClose} aria-label="閉じる"><X size={19} /></button>
+        </div>
+
+        <div className="kb-card" style={{ background: "#FAFAFB" }}>
+          {books.map((b) => (
+            <div className="kb-row" key={b.id} style={{ cursor: "default" }}>
+              {editing === b.id ? (
+                <div className="kb-rowmain">
+                  <input className="kb-input" value={name} onChange={(ev) => setName(ev.target.value)} placeholder="名前" />
+                  <input className="kb-input" style={{ marginTop: 6, fontSize: 16 }} value={url}
+                         onChange={(ev) => setUrl(ev.target.value)} spellCheck={false}
+                         placeholder="接続先を変えるときだけ入れる" />
+                </div>
+              ) : (
+                <>
+                  <div className="kb-dot" style={{ background: b.id === currentId ? "var(--accent)" : "#C4C8CE" }}>
+                    {b.id === currentId ? <Check size={15} /> : <BookOpen size={14} />}
+                  </div>
+                  <button className="kb-bookpick" onClick={() => onPick(b.id)}>
+                    <div className="kb-rowtitle">{b.name}</div>
+                    <div className="kb-rowsub">{b.id === currentId ? "いま開いています" : "切り替える"}</div>
+                  </button>
+                </>
+              )}
+              <div className="kb-rowright">
+                {editing === b.id ? (
+                  <>
+                    <button className="kb-iconbtn" onClick={submitEdit} aria-label="保存"><Check size={15} /></button>
+                    <button className="kb-iconbtn" onClick={reset} aria-label="取消"><X size={14} /></button>
+                  </>
+                ) : confirming === b.id ? (
+                  <>
+                    <button className="kb-iconbtn" style={{ color: "var(--red)" }}
+                            onClick={() => { onRemove(b.id); reset(); }} aria-label="外すのを確定"><Check size={15} /></button>
+                    <button className="kb-iconbtn" onClick={() => setConfirming(null)} aria-label="取消"><X size={14} /></button>
+                  </>
+                ) : (
+                  <>
+                    <button className="kb-iconbtn" onClick={() => { reset(); setEditing(b.id); setName(b.name); }}
+                            aria-label={`${b.name}を編集`}><Pencil size={14} /></button>
+                    {books.length > 1 && (
+                      <button className="kb-iconbtn" onClick={() => { reset(); setConfirming(b.id); }}
+                              aria-label={`${b.name}を端末から外す`}><Trash2 size={14} /></button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {confirming && (
+          <div className="kb-note">
+            この端末の登録から外すだけです。スプレッドシートの中身は消えません。接続先を入れ直せばまた開けます。
+          </div>
+        )}
+        {error && <div className="kb-err" style={{ marginTop: 9 }}>{error}</div>}
+
+        {adding ? (
+          <div style={{ marginTop: 12 }}>
+            <div className="kb-field">
+              <label className="kb-label">名前</label>
+              <input className="kb-input" value={name} onChange={(ev) => setName(ev.target.value)} placeholder="家計" />
+            </div>
+            <div className="kb-field">
+              <label className="kb-label">接続先</label>
+              <input className="kb-input" value={url} onChange={(ev) => setUrl(ev.target.value)} spellCheck={false}
+                     placeholder="https://script.google.com/macros/s/..../exec" />
+            </div>
+            <div className="kb-btn-row">
+              <button className="kb-btn ghost" onClick={reset}>やめる</button>
+              <button className="kb-btn" onClick={submitAdd}>追加</button>
+            </div>
+          </div>
+        ) : (
+          <button className="kb-btn" style={{ marginTop: 12 }} onClick={() => { reset(); setAdding(true); }}>
+            家計簿を追加
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SetupScreen({ onSave }) {
+  const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [err, setErr] = useState("");
   function submit() {
+    const n = name.trim();
     const v = url.trim();
-    if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(v)) {
+    if (!n) { setErr("家計簿の名前を入れてください。"); return; }
+    if (!validUrl(v)) {
       setErr("Apps Scriptのウェブアプリの URL（/exec で終わるもの）を貼り付けてください。");
       return;
     }
-    onSave(v);
+    onSave(n, v);
   }
   return (
     <div className="kb-setup">
-      <h1>接続先の設定</h1>
-      <p>データの保存先になるApps ScriptのウェブアプリのURLを貼り付けてください。この端末に記憶され、次回からは聞きません。</p>
+      <h1>家計簿の設定</h1>
+      <p>家計簿の名前と、データの保存先になるApps ScriptのウェブアプリのURLを入れてください。この端末に記憶され、次回からは聞きません。あとから増やせます。</p>
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="家計簿の名前" />
       <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/..../exec" spellCheck={false} />
       {err && <div className="kb-err">{err}</div>}
       <button onClick={submit}>保存して開く</button>
@@ -598,7 +734,12 @@ function KakeiboApp() {
   const realMonthIdx = now.getMonth();
   const realDay = now.getDate();
 
-  const [needsSetup, setNeedsSetup] = useState(!KakeiboAPI.getUrl());
+  const [needsSetup, setNeedsSetup] = useState(!KakeiboAPI.books().length);
+  // いま見ている家計簿。切り替えたらここが変わり、読み込みからやり直す
+  const [bookId, setBookId] = useState(() => KakeiboAPI.currentBookId());
+  const [booksOpen, setBooksOpen] = useState(false);
+  // 家計簿の名前や並びを変えたときに、画面を描き直させるためだけの目印
+  const [, bumpBooks] = useState(0);
   const [tab, setTab] = useState("record");
   const [year, setYear] = useState(realYear);
 
@@ -722,8 +863,10 @@ function KakeiboApp() {
       });
   }, [applyData]);
 
+  // bookId が変わると、切り替えた先の控えを出してから読み直す
   useEffect(() => {
     if (needsSetup) { setLoading(false); return; }
+    setLoadError("");
     // 前回の控えがあれば先に出す。Apps Script の応答を待つ数秒を空白にしない
     const snap = KakeiboAPI.readSnapshot();
     if (snap) {
@@ -734,7 +877,7 @@ function KakeiboApp() {
     } else {
       load();
     }
-  }, [needsSetup, load, applyData]);
+  }, [needsSetup, bookId, load, applyData]);
 
   /**
    * 控えを取り直す。
@@ -749,7 +892,7 @@ function KakeiboApp() {
     }, 800);
     return () => clearTimeout(t);
   }, [categories, entries, transfers, settlements, budgets,
-      sync.pending, sync.sending, needsSetup, loading, loadError, refreshing]);
+      sync.pending, sync.sending, needsSetup, bookId, loading, loadError, refreshing]);
 
   useEffect(() => KakeiboAPI.subscribe(setSync), []);
 
@@ -1291,6 +1434,30 @@ function KakeiboApp() {
     }
     setCatFormOpen(false);
   }
+  /* ---- 家計簿の切り替え ---- */
+
+  /**
+   * 別の家計簿へ移る。
+   *
+   * 未送信が残っていると、どの家計簿へ送るはずだったのか分からなくなる。
+   * 送り終わってから切り替え、送れなければ切り替えずに理由を出す。
+   * 絞り込みや開いている明細は、切り替え先には無いものを指しているので戻す。
+   */
+  function pickBook(id) {
+    if (id === KakeiboAPI.currentBookId()) { setBooksOpen(false); return; }
+    KakeiboAPI.switchTo(id).then(() => {
+      setHistCat(null);
+      setHistMonth(null);
+      setDetail(null);
+      setLoading(true);
+      setBookId(id);
+      setBooksOpen(false);
+      flash(`${KakeiboAPI.currentBookName()}に切り替えました`);
+    }).catch((err) => {
+      flash(`未送信が送れないため切り替えられません。${err.message || err}`);
+    });
+  }
+
   /**
    * 端末に残しているアプリの控えを捨てて開き直す。
    * 画面が古いまま変わらなくなったときの逃げ道として置いている。
@@ -1678,7 +1845,11 @@ function KakeiboApp() {
   /* ---- 描画 ---- */
 
   if (needsSetup) {
-    return <SetupScreen onSave={(u) => { KakeiboAPI.setUrl(u); setNeedsSetup(false); }} />;
+    return <SetupScreen onSave={(n, u) => {
+      const b = KakeiboAPI.addBook(n, u);
+      setBookId(b.id);
+      setNeedsSetup(false);
+    }} />;
   }
 
   return (
@@ -1690,10 +1861,20 @@ function KakeiboApp() {
       <div className="kb-stickytop">
         <div className="kb-topbar">
           <div className="kb-bar-inner">
-            <span className="kb-title">
-              {tab === "budget" ? "予算" : tab === "record" ? "記録" : tab === "history" ? "履歴" : tab === "analysis" ? "分析" : "立替申請"}
-            </span>
+            {/* 見出しはいま開いている家計簿の名前にしてある。
+                どの画面にいるかは下のタブの色で分かるので、上に重ねて出す必要が薄い。
+                かわりに、どの家計簿を見ているかが常に目に入る */}
+            <button className="kb-booktitle" onClick={() => setBooksOpen(true)}>
+              <span>{KakeiboAPI.currentBookName() || "家計簿"}</span>
+              <ChevronDown size={15} />
+            </button>
             <div className="kb-yearpick">
+              {/* ほかの端末から入った記録は開き直すまで出てこない。
+                  家計は2人で使うので、その場で取り直せるようにしている */}
+              <button className="kb-yearbtn" onClick={() => load({ quiet: true })}
+                      disabled={refreshing} aria-label="最新を読み込む">
+                <RefreshCw size={15} className={refreshing ? "kb-spin" : undefined} />
+              </button>
               <button className="kb-yearbtn" onClick={() => setYear((y) => y - 1)} aria-label="前の年"><ChevronLeft size={16} /></button>
               <span className="kb-yearlabel">{year}年</span>
               <button className="kb-yearbtn" onClick={() => setYear((y) => y + 1)} aria-label="次の年"><ChevronRight size={16} /></button>
@@ -1752,7 +1933,7 @@ function KakeiboApp() {
               <div style={{ padding: "0 14px 16px" }}>
                 <button className="kb-btn" onClick={load}>もう一度読み込む</button>
                 <div className="kb-btn-row" style={{ marginTop: 9 }}>
-                  <button className="kb-btn ghost" onClick={() => { KakeiboAPI.setUrl(""); setNeedsSetup(true); }}>接続先を設定し直す</button>
+                  <button className="kb-btn ghost" onClick={() => setBooksOpen(true)}>家計簿の設定を見る</button>
                 </div>
               </div>
             </div>
@@ -2456,6 +2637,28 @@ function KakeiboApp() {
           </div>
         )}
 
+        {/* 家計簿の切り替え */}
+        {booksOpen && (
+          <BookSheet
+            books={KakeiboAPI.books()}
+            currentId={KakeiboAPI.currentBookId()}
+            onPick={pickBook}
+            onAdd={(n, u) => { KakeiboAPI.addBook(n, u); bumpBooks((v) => v + 1); }}
+            onRename={(id, n) => { KakeiboAPI.renameBook(id, n); bumpBooks((v) => v + 1); }}
+            onSetUrl={(id, u) => {
+              KakeiboAPI.setBookUrl(id, u);
+              bumpBooks((v) => v + 1);
+              if (id === KakeiboAPI.currentBookId()) { setLoading(true); load(); }
+            }}
+            onRemove={(id) => {
+              KakeiboAPI.removeBook(id);
+              bumpBooks((v) => v + 1);
+              if (id === bookId) { setLoading(true); setBookId(KakeiboAPI.currentBookId()); }
+            }}
+            onClose={() => setBooksOpen(false)}
+          />
+        )}
+
         {/* カテゴリ管理シート */}
         {manageOpen && (
           <div className="kb-sheet-backdrop" onClick={() => { setManageOpen(false); setCatFormOpen(false); }}>
@@ -2599,10 +2802,12 @@ function KakeiboApp() {
 
                   <div className="kb-section-label" style={{ marginTop: 22 }}>接続先</div>
                   <div className="kb-savebox" style={{ wordBreak: "break-all", fontFamily: "ui-monospace, monospace", fontSize: 10.5 }}>
+                    {KakeiboAPI.currentBookName()}
+                    <br />
                     {KakeiboAPI.getUrl()}
                   </div>
                   <div className="kb-btn-row" style={{ marginTop: 9 }}>
-                    <button className="kb-btn ghost" onClick={() => { KakeiboAPI.setUrl(""); setNeedsSetup(true); }}>設定し直す</button>
+                    <button className="kb-btn ghost" onClick={() => { setManageOpen(false); setBooksOpen(true); }}>家計簿の設定</button>
                   </div>
 
                   <div className="kb-section-label" style={{ marginTop: 22 }}>アプリの更新</div>

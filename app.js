@@ -54,6 +54,9 @@
   var Check = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M20 6 9 17l-5-5" }));
   var ChevronRight = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "m9 18 6-6-6-6" }));
   var ChevronLeft = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "m15 18-6-6 6-6" }));
+  var ChevronDown = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "m6 9 6 6 6-6" }));
+  var RefreshCw = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" }), /* @__PURE__ */ React.createElement("path", { d: "M21 3v5h-5" }), /* @__PURE__ */ React.createElement("path", { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" }), /* @__PURE__ */ React.createElement("path", { d: "M8 16H3v5" }));
+  var BookOpen = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M12 7v14" }), /* @__PURE__ */ React.createElement("path", { d: "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" }));
   var Trash2 = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M3 6h18" }), /* @__PURE__ */ React.createElement("path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }), /* @__PURE__ */ React.createElement("path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }), /* @__PURE__ */ React.createElement("path", { d: "M10 11v6" }), /* @__PURE__ */ React.createElement("path", { d: "M14 11v6" }));
   var Pencil = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" }), /* @__PURE__ */ React.createElement("path", { d: "m15 5 4 4" }));
   var Loader2 = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M21 12a9 9 0 1 1-6.219-8.56" }));
@@ -301,18 +304,131 @@
       setAdding(true);
     } }, title, "\u3092\u8FFD\u52A0"));
   }
+  function validUrl(v) {
+    return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(v);
+  }
+  function BookSheet({ books, currentId, onPick, onAdd, onRename, onSetUrl, onRemove, onClose }) {
+    const [adding, setAdding] = useState(false);
+    const [editing, setEditing] = useState(null);
+    const [confirming, setConfirming] = useState(null);
+    const [name, setName] = useState("");
+    const [url, setUrl] = useState("");
+    const [error, setError] = useState("");
+    function reset() {
+      setAdding(false);
+      setEditing(null);
+      setConfirming(null);
+      setName("");
+      setUrl("");
+      setError("");
+    }
+    function submitAdd() {
+      if (!name.trim()) {
+        setError("\u540D\u524D\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002");
+        return;
+      }
+      if (!validUrl(url.trim())) {
+        setError("Apps Script\u306E\u30A6\u30A7\u30D6\u30A2\u30D7\u30EA\u306EURL\uFF08/exec \u3067\u7D42\u308F\u308B\u3082\u306E\uFF09\u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\u3002");
+        return;
+      }
+      if (books.some((b) => b.name === name.trim())) {
+        setError("\u540C\u3058\u540D\u524D\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059\u3002");
+        return;
+      }
+      onAdd(name.trim(), url.trim());
+      reset();
+    }
+    function submitEdit() {
+      if (!name.trim()) {
+        setError("\u540D\u524D\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002");
+        return;
+      }
+      const u = url.trim();
+      if (u && !validUrl(u)) {
+        setError("\u63A5\u7D9A\u5148\u306EURL\u306E\u5F62\u304C\u9055\u3044\u307E\u3059\u3002");
+        return;
+      }
+      onRename(editing, name.trim());
+      if (u) onSetUrl(editing, u);
+      reset();
+    }
+    return /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: onClose }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, "\u5BB6\u8A08\u7C3F"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: onClose, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, books.map((b) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: b.id, style: { cursor: "default" } }, editing === b.id ? /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: name, onChange: (ev) => setName(ev.target.value), placeholder: "\u540D\u524D" }), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        className: "kb-input",
+        style: { marginTop: 6, fontSize: 16 },
+        value: url,
+        onChange: (ev) => setUrl(ev.target.value),
+        spellCheck: false,
+        placeholder: "\u63A5\u7D9A\u5148\u3092\u5909\u3048\u308B\u3068\u304D\u3060\u3051\u5165\u308C\u308B"
+      }
+    )) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: b.id === currentId ? "var(--accent)" : "#C4C8CE" } }, b.id === currentId ? /* @__PURE__ */ React.createElement(Check, { size: 15 }) : /* @__PURE__ */ React.createElement(BookOpen, { size: 14 })), /* @__PURE__ */ React.createElement("button", { className: "kb-bookpick", onClick: () => onPick(b.id) }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, b.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, b.id === currentId ? "\u3044\u307E\u958B\u3044\u3066\u3044\u307E\u3059" : "\u5207\u308A\u66FF\u3048\u308B"))), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, editing === b.id ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: submitEdit, "aria-label": "\u4FDD\u5B58" }, /* @__PURE__ */ React.createElement(Check, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: reset, "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : confirming === b.id ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: "kb-iconbtn",
+        style: { color: "var(--red)" },
+        onClick: () => {
+          onRemove(b.id);
+          reset();
+        },
+        "aria-label": "\u5916\u3059\u306E\u3092\u78BA\u5B9A"
+      },
+      /* @__PURE__ */ React.createElement(Check, { size: 15 })
+    ), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setConfirming(null), "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: "kb-iconbtn",
+        onClick: () => {
+          reset();
+          setEditing(b.id);
+          setName(b.name);
+        },
+        "aria-label": `${b.name}\u3092\u7DE8\u96C6`
+      },
+      /* @__PURE__ */ React.createElement(Pencil, { size: 14 })
+    ), books.length > 1 && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: "kb-iconbtn",
+        onClick: () => {
+          reset();
+          setConfirming(b.id);
+        },
+        "aria-label": `${b.name}\u3092\u7AEF\u672B\u304B\u3089\u5916\u3059`
+      },
+      /* @__PURE__ */ React.createElement(Trash2, { size: 14 })
+    )))))), confirming && /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u3053\u306E\u7AEF\u672B\u306E\u767B\u9332\u304B\u3089\u5916\u3059\u3060\u3051\u3067\u3059\u3002\u30B9\u30D7\u30EC\u30C3\u30C9\u30B7\u30FC\u30C8\u306E\u4E2D\u8EAB\u306F\u6D88\u3048\u307E\u305B\u3093\u3002\u63A5\u7D9A\u5148\u3092\u5165\u308C\u76F4\u305B\u3070\u307E\u305F\u958B\u3051\u307E\u3059\u3002"), error && /* @__PURE__ */ React.createElement("div", { className: "kb-err", style: { marginTop: 9 } }, error), adding ? /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u540D\u524D"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: name, onChange: (ev) => setName(ev.target.value), placeholder: "\u5BB6\u8A08" })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u63A5\u7D9A\u5148"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        className: "kb-input",
+        value: url,
+        onChange: (ev) => setUrl(ev.target.value),
+        spellCheck: false,
+        placeholder: "https://script.google.com/macros/s/..../exec"
+      }
+    )), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row" }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: reset }, "\u3084\u3081\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitAdd }, "\u8FFD\u52A0"))) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn", style: { marginTop: 12 }, onClick: () => {
+      reset();
+      setAdding(true);
+    } }, "\u5BB6\u8A08\u7C3F\u3092\u8FFD\u52A0")));
+  }
   function SetupScreen({ onSave }) {
+    const [name, setName] = useState("");
     const [url, setUrl] = useState("");
     const [err, setErr] = useState("");
     function submit() {
+      const n = name.trim();
       const v = url.trim();
-      if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(v)) {
+      if (!n) {
+        setErr("\u5BB6\u8A08\u7C3F\u306E\u540D\u524D\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002");
+        return;
+      }
+      if (!validUrl(v)) {
         setErr("Apps Script\u306E\u30A6\u30A7\u30D6\u30A2\u30D7\u30EA\u306E URL\uFF08/exec \u3067\u7D42\u308F\u308B\u3082\u306E\uFF09\u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\u3002");
         return;
       }
-      onSave(v);
+      onSave(n, v);
     }
-    return /* @__PURE__ */ React.createElement("div", { className: "kb-setup" }, /* @__PURE__ */ React.createElement("h1", null, "\u63A5\u7D9A\u5148\u306E\u8A2D\u5B9A"), /* @__PURE__ */ React.createElement("p", null, "\u30C7\u30FC\u30BF\u306E\u4FDD\u5B58\u5148\u306B\u306A\u308BApps Script\u306E\u30A6\u30A7\u30D6\u30A2\u30D7\u30EA\u306EURL\u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\u3002\u3053\u306E\u7AEF\u672B\u306B\u8A18\u61B6\u3055\u308C\u3001\u6B21\u56DE\u304B\u3089\u306F\u805E\u304D\u307E\u305B\u3093\u3002"), /* @__PURE__ */ React.createElement("input", { value: url, onChange: (e) => setUrl(e.target.value), placeholder: "https://script.google.com/macros/s/..../exec", spellCheck: false }), err && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, err), /* @__PURE__ */ React.createElement("button", { onClick: submit }, "\u4FDD\u5B58\u3057\u3066\u958B\u304F"));
+    return /* @__PURE__ */ React.createElement("div", { className: "kb-setup" }, /* @__PURE__ */ React.createElement("h1", null, "\u5BB6\u8A08\u7C3F\u306E\u8A2D\u5B9A"), /* @__PURE__ */ React.createElement("p", null, "\u5BB6\u8A08\u7C3F\u306E\u540D\u524D\u3068\u3001\u30C7\u30FC\u30BF\u306E\u4FDD\u5B58\u5148\u306B\u306A\u308BApps Script\u306E\u30A6\u30A7\u30D6\u30A2\u30D7\u30EA\u306EURL\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002\u3053\u306E\u7AEF\u672B\u306B\u8A18\u61B6\u3055\u308C\u3001\u6B21\u56DE\u304B\u3089\u306F\u805E\u304D\u307E\u305B\u3093\u3002\u3042\u3068\u304B\u3089\u5897\u3084\u305B\u307E\u3059\u3002"), /* @__PURE__ */ React.createElement("input", { value: name, onChange: (e) => setName(e.target.value), placeholder: "\u5BB6\u8A08\u7C3F\u306E\u540D\u524D" }), /* @__PURE__ */ React.createElement("input", { value: url, onChange: (e) => setUrl(e.target.value), placeholder: "https://script.google.com/macros/s/..../exec", spellCheck: false }), err && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, err), /* @__PURE__ */ React.createElement("button", { onClick: submit }, "\u4FDD\u5B58\u3057\u3066\u958B\u304F"));
   }
   function BudgetTab({ year, plan, cats, catIndex, onEdit }) {
     const fixed = cats.filter((c) => c.group === "\u56FA\u5B9A\u8CBB");
@@ -375,7 +491,10 @@
     const realYear = now.getFullYear();
     const realMonthIdx = now.getMonth();
     const realDay = now.getDate();
-    const [needsSetup, setNeedsSetup] = useState(!KakeiboAPI.getUrl());
+    const [needsSetup, setNeedsSetup] = useState(!KakeiboAPI.books().length);
+    const [bookId, setBookId] = useState(() => KakeiboAPI.currentBookId());
+    const [booksOpen, setBooksOpen] = useState(false);
+    const [, bumpBooks] = useState(0);
     const [tab, setTab] = useState("record");
     const [year, setYear] = useState(realYear);
     const [categories, setCategories] = useState([]);
@@ -480,6 +599,7 @@
         setLoading(false);
         return;
       }
+      setLoadError("");
       const snap = KakeiboAPI.readSnapshot();
       if (snap) {
         applyData(snap.data);
@@ -489,7 +609,7 @@
       } else {
         load();
       }
-    }, [needsSetup, load, applyData]);
+    }, [needsSetup, bookId, load, applyData]);
     useEffect(() => {
       if (needsSetup || loading || loadError || refreshing) return;
       if (sync.pending > 0 || sync.sending) return;
@@ -506,6 +626,7 @@
       sync.pending,
       sync.sending,
       needsSetup,
+      bookId,
       loading,
       loadError,
       refreshing
@@ -1034,6 +1155,23 @@
       }
       setCatFormOpen(false);
     }
+    function pickBook(id) {
+      if (id === KakeiboAPI.currentBookId()) {
+        setBooksOpen(false);
+        return;
+      }
+      KakeiboAPI.switchTo(id).then(() => {
+        setHistCat(null);
+        setHistMonth(null);
+        setDetail(null);
+        setLoading(true);
+        setBookId(id);
+        setBooksOpen(false);
+        flash(`${KakeiboAPI.currentBookName()}\u306B\u5207\u308A\u66FF\u3048\u307E\u3057\u305F`);
+      }).catch((err) => {
+        flash(`\u672A\u9001\u4FE1\u304C\u9001\u308C\u306A\u3044\u305F\u3081\u5207\u308A\u66FF\u3048\u3089\u308C\u307E\u305B\u3093\u3002${err.message || err}`);
+      });
+    }
     function resetAppCache() {
       if (sync.pending > 0) {
         flash("\u672A\u9001\u4FE1\u304C\u3042\u308A\u307E\u3059\u3002\u9001\u4FE1\u304C\u7D42\u308F\u3063\u3066\u304B\u3089\u306B\u3057\u3066\u304F\u3060\u3055\u3044");
@@ -1407,15 +1545,22 @@
       { key: "settle", label: "\u7ACB\u66FF", icon: Wallet }
     ];
     if (needsSetup) {
-      return /* @__PURE__ */ React.createElement(SetupScreen, { onSave: (u) => {
-        KakeiboAPI.setUrl(u);
+      return /* @__PURE__ */ React.createElement(SetupScreen, { onSave: (n, u) => {
+        const b = KakeiboAPI.addBook(n, u);
+        setBookId(b.id);
         setNeedsSetup(false);
       } });
     }
-    return /* @__PURE__ */ React.createElement("div", { className: "kb" }, /* @__PURE__ */ React.createElement("div", { className: "kb-stickytop" }, /* @__PURE__ */ React.createElement("div", { className: "kb-topbar" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("span", { className: "kb-title" }, tab === "budget" ? "\u4E88\u7B97" : tab === "record" ? "\u8A18\u9332" : tab === "history" ? "\u5C65\u6B74" : tab === "analysis" ? "\u5206\u6790" : "\u7ACB\u66FF\u7533\u8ACB"), /* @__PURE__ */ React.createElement("div", { className: "kb-yearpick" }, /* @__PURE__ */ React.createElement("button", { className: "kb-yearbtn", onClick: () => setYear((y) => y - 1), "aria-label": "\u524D\u306E\u5E74" }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("span", { className: "kb-yearlabel" }, year, "\u5E74"), /* @__PURE__ */ React.createElement("button", { className: "kb-yearbtn", onClick: () => setYear((y) => y + 1), "aria-label": "\u6B21\u306E\u5E74" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 16 }))))), sync.error ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar error" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "\u672A\u9001\u4FE1\u304C", sync.pending, "\u4EF6\u3042\u308A\u307E\u3059\u3002"), sync.error), /* @__PURE__ */ React.createElement("button", { className: "kb-syncbtn", onClick: () => KakeiboAPI.retry() }, "\u518D\u9001"))) : sync.pending > 0 && !sync.sending ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar error" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "\u672A\u9001\u4FE1\u304C", sync.pending, "\u4EF6\u3042\u308A\u307E\u3059\u3002"), "\u3053\u306E\u307E\u307E\u9589\u3058\u308B\u3068\u5931\u308F\u308C\u307E\u3059\u3002"), /* @__PURE__ */ React.createElement("button", { className: "kb-syncbtn", onClick: () => KakeiboAPI.retry() }, "\u9001\u4FE1"))) : sync.pending > 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar pending" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement(Loader2, { size: 14, className: "kb-spin" }), /* @__PURE__ */ React.createElement("span", null, "\u4FDD\u5B58\u4E2D\u2026\uFF08\u6B8B\u308A", sync.pending, "\u4EF6\uFF09"))) : loadError && hasData ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar error" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("span", null, "\u6700\u65B0\u3092\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u8868\u793A\u306F", shownAt ? timeLabel(shownAt) + "\u6642\u70B9\u306E" : "", "\u63A7\u3048\u3067\u3059\u3002"), /* @__PURE__ */ React.createElement("button", { className: "kb-syncbtn", onClick: () => load({ quiet: true }) }, "\u518D\u8AAD\u307F\u8FBC\u307F"))) : shownAt ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar stale" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement(Loader2, { size: 14, className: "kb-spin" }), /* @__PURE__ */ React.createElement("span", null, timeLabel(shownAt), "\u6642\u70B9\u306E\u5185\u5BB9\u3067\u3059\u3002\u6700\u65B0\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059\u2026"))) : null), /* @__PURE__ */ React.createElement("div", { className: "kb-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "kb-body" }, loading ? /* @__PURE__ */ React.createElement("div", { className: "kb-loading" }, /* @__PURE__ */ React.createElement(Loader2, { size: 16, className: "kb-spin" }), " \u8AAD\u307F\u8FBC\u307F\u4E2D\u2026") : loadError && !hasData ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, "\u30C7\u30FC\u30BF\u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3067\u3057\u305F"), loadError), /* @__PURE__ */ React.createElement("div", { style: { padding: "0 14px 16px" } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: load }, "\u3082\u3046\u4E00\u5EA6\u8AAD\u307F\u8FBC\u3080"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => {
-      KakeiboAPI.setUrl("");
-      setNeedsSetup(true);
-    } }, "\u63A5\u7D9A\u5148\u3092\u8A2D\u5B9A\u3057\u76F4\u3059")))) : tab === "budget" ? /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { className: "kb" }, /* @__PURE__ */ React.createElement("div", { className: "kb-stickytop" }, /* @__PURE__ */ React.createElement("div", { className: "kb-topbar" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("button", { className: "kb-booktitle", onClick: () => setBooksOpen(true) }, /* @__PURE__ */ React.createElement("span", null, KakeiboAPI.currentBookName() || "\u5BB6\u8A08\u7C3F"), /* @__PURE__ */ React.createElement(ChevronDown, { size: 15 })), /* @__PURE__ */ React.createElement("div", { className: "kb-yearpick" }, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: "kb-yearbtn",
+        onClick: () => load({ quiet: true }),
+        disabled: refreshing,
+        "aria-label": "\u6700\u65B0\u3092\u8AAD\u307F\u8FBC\u3080"
+      },
+      /* @__PURE__ */ React.createElement(RefreshCw, { size: 15, className: refreshing ? "kb-spin" : void 0 })
+    ), /* @__PURE__ */ React.createElement("button", { className: "kb-yearbtn", onClick: () => setYear((y) => y - 1), "aria-label": "\u524D\u306E\u5E74" }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("span", { className: "kb-yearlabel" }, year, "\u5E74"), /* @__PURE__ */ React.createElement("button", { className: "kb-yearbtn", onClick: () => setYear((y) => y + 1), "aria-label": "\u6B21\u306E\u5E74" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 16 }))))), sync.error ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar error" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "\u672A\u9001\u4FE1\u304C", sync.pending, "\u4EF6\u3042\u308A\u307E\u3059\u3002"), sync.error), /* @__PURE__ */ React.createElement("button", { className: "kb-syncbtn", onClick: () => KakeiboAPI.retry() }, "\u518D\u9001"))) : sync.pending > 0 && !sync.sending ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar error" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "\u672A\u9001\u4FE1\u304C", sync.pending, "\u4EF6\u3042\u308A\u307E\u3059\u3002"), "\u3053\u306E\u307E\u307E\u9589\u3058\u308B\u3068\u5931\u308F\u308C\u307E\u3059\u3002"), /* @__PURE__ */ React.createElement("button", { className: "kb-syncbtn", onClick: () => KakeiboAPI.retry() }, "\u9001\u4FE1"))) : sync.pending > 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar pending" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement(Loader2, { size: 14, className: "kb-spin" }), /* @__PURE__ */ React.createElement("span", null, "\u4FDD\u5B58\u4E2D\u2026\uFF08\u6B8B\u308A", sync.pending, "\u4EF6\uFF09"))) : loadError && hasData ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar error" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement("span", null, "\u6700\u65B0\u3092\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u8868\u793A\u306F", shownAt ? timeLabel(shownAt) + "\u6642\u70B9\u306E" : "", "\u63A7\u3048\u3067\u3059\u3002"), /* @__PURE__ */ React.createElement("button", { className: "kb-syncbtn", onClick: () => load({ quiet: true }) }, "\u518D\u8AAD\u307F\u8FBC\u307F"))) : shownAt ? /* @__PURE__ */ React.createElement("div", { className: "kb-syncbar stale" }, /* @__PURE__ */ React.createElement("div", { className: "kb-bar-inner" }, /* @__PURE__ */ React.createElement(Loader2, { size: 14, className: "kb-spin" }), /* @__PURE__ */ React.createElement("span", null, timeLabel(shownAt), "\u6642\u70B9\u306E\u5185\u5BB9\u3067\u3059\u3002\u6700\u65B0\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059\u2026"))) : null), /* @__PURE__ */ React.createElement("div", { className: "kb-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "kb-body" }, loading ? /* @__PURE__ */ React.createElement("div", { className: "kb-loading" }, /* @__PURE__ */ React.createElement(Loader2, { size: 16, className: "kb-spin" }), " \u8AAD\u307F\u8FBC\u307F\u4E2D\u2026") : loadError && !hasData ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, "\u30C7\u30FC\u30BF\u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3067\u3057\u305F"), loadError), /* @__PURE__ */ React.createElement("div", { style: { padding: "0 14px 16px" } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: load }, "\u3082\u3046\u4E00\u5EA6\u8AAD\u307F\u8FBC\u3080"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setBooksOpen(true) }, "\u5BB6\u8A08\u7C3F\u306E\u8A2D\u5B9A\u3092\u898B\u308B")))) : tab === "budget" ? /* @__PURE__ */ React.createElement(
       BudgetTab,
       {
         year,
@@ -1571,7 +1716,39 @@
     }, "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u91D1\u984D\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(AmountField, { value: trAmount, onChange: setTrAmount })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u65E5\u4ED8"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", type: "date", value: trDate, min: `${year}-01-01`, max: `${year}-12-31`, onChange: (ev) => setTrDate(ev.target.value) })), /* @__PURE__ */ React.createElement("div", { className: "kb-inline" }, /* @__PURE__ */ React.createElement("div", { className: "kb-field", style: { flex: 1 } }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u632F\u66FF\u5143"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: trFrom, onChange: (ev) => setTrFrom(ev.target.value) }, withCurrent(methods, trFrom).map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field", style: { flex: 1 } }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u632F\u66FF\u5148"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: trTo, onChange: (ev) => {
       if (trMemo === trTo || !trMemo) setTrMemo(ev.target.value);
       setTrTo(ev.target.value);
-    } }, withCurrent(methods, trTo).map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m))))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u30E1\u30E2\uFF08\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: trMemo, onChange: (ev) => setTrMemo(ev.target.value), placeholder: "PASMO" })), /* @__PURE__ */ React.createElement(CheckRow, { checked: !trPending, onChange: (v) => setTrPending(!v) }, "\u78BA\u5B9A"), trError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, trError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitTr }, trEditId ? "\u4FDD\u5B58\u3059\u308B" : "\u8A18\u9332\u3059\u308B"), trEditId && /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, trConfirmDel ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => deleteTransfer(trEditId) }, "\u672C\u5F53\u306B\u524A\u9664\u3059\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setTrConfirmDel(false) }, "\u3084\u3081\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => setTrConfirmDel(true) }, "\u3053\u306E\u632F\u66FF\u3092\u524A\u9664")))), manageOpen && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => {
+    } }, withCurrent(methods, trTo).map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m))))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u30E1\u30E2\uFF08\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: trMemo, onChange: (ev) => setTrMemo(ev.target.value), placeholder: "PASMO" })), /* @__PURE__ */ React.createElement(CheckRow, { checked: !trPending, onChange: (v) => setTrPending(!v) }, "\u78BA\u5B9A"), trError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, trError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitTr }, trEditId ? "\u4FDD\u5B58\u3059\u308B" : "\u8A18\u9332\u3059\u308B"), trEditId && /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, trConfirmDel ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => deleteTransfer(trEditId) }, "\u672C\u5F53\u306B\u524A\u9664\u3059\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setTrConfirmDel(false) }, "\u3084\u3081\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn danger", onClick: () => setTrConfirmDel(true) }, "\u3053\u306E\u632F\u66FF\u3092\u524A\u9664")))), booksOpen && /* @__PURE__ */ React.createElement(
+      BookSheet,
+      {
+        books: KakeiboAPI.books(),
+        currentId: KakeiboAPI.currentBookId(),
+        onPick: pickBook,
+        onAdd: (n, u) => {
+          KakeiboAPI.addBook(n, u);
+          bumpBooks((v) => v + 1);
+        },
+        onRename: (id, n) => {
+          KakeiboAPI.renameBook(id, n);
+          bumpBooks((v) => v + 1);
+        },
+        onSetUrl: (id, u) => {
+          KakeiboAPI.setBookUrl(id, u);
+          bumpBooks((v) => v + 1);
+          if (id === KakeiboAPI.currentBookId()) {
+            setLoading(true);
+            load();
+          }
+        },
+        onRemove: (id) => {
+          KakeiboAPI.removeBook(id);
+          bumpBooks((v) => v + 1);
+          if (id === bookId) {
+            setLoading(true);
+            setBookId(KakeiboAPI.currentBookId());
+          }
+        },
+        onClose: () => setBooksOpen(false)
+      }
+    ), manageOpen && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => {
       setManageOpen(false);
       setCatFormOpen(false);
     } }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, "\u30AB\u30C6\u30B4\u30EA\u306E\u7DE8\u96C6"), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: () => {
@@ -1619,10 +1796,10 @@
     ), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u4FDD\u5B58\u306E\u72B6\u614B"), /* @__PURE__ */ React.createElement("div", { className: `kb-savebox ${sync.error ? "error" : sync.pending > 0 ? "" : "ok"}` }, sync.error ? `\u4FDD\u5B58\u3067\u304D\u3066\u3044\u307E\u305B\u3093\uFF08\u672A\u9001\u4FE1${sync.pending}\u4EF6\uFF09\uFF1A${sync.error}` : sync.pending > 0 ? `\u4FDD\u5B58\u4E2D\u3067\u3059\uFF08\u6B8B\u308A${sync.pending}\u4EF6\uFF09` : "\u30B9\u30D7\u30EC\u30C3\u30C9\u30B7\u30FC\u30C8\u306B\u4FDD\u5B58\u3067\u304D\u3066\u3044\u307E\u3059"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => {
       setManageOpen(false);
       load();
-    } }, "\u8AAD\u307F\u8FBC\u307F\u76F4\u3059")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u63A5\u7D9A\u5148"), /* @__PURE__ */ React.createElement("div", { className: "kb-savebox", style: { wordBreak: "break-all", fontFamily: "ui-monospace, monospace", fontSize: 10.5 } }, KakeiboAPI.getUrl()), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => {
-      KakeiboAPI.setUrl("");
-      setNeedsSetup(true);
-    } }, "\u8A2D\u5B9A\u3057\u76F4\u3059")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u30A2\u30D7\u30EA\u306E\u66F4\u65B0"), /* @__PURE__ */ React.createElement("div", { className: "kb-savebox" }, "2\u56DE\u76EE\u304B\u3089\u306F\u901A\u4FE1\u3092\u5F85\u305F\u305A\u306B\u958B\u3051\u308B\u3088\u3046\u3001\u30A2\u30D7\u30EA\u672C\u4F53\u3092\u7AEF\u672B\u306B\u63A7\u3048\u3066\u3044\u307E\u3059\u3002 \u753B\u9762\u304C\u53E4\u3044\u307E\u307E\u5909\u308F\u3089\u306A\u3044\u3068\u304D\u306F\u3001\u305D\u306E\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u8A18\u9332\u306B\u306F\u5F71\u97FF\u3057\u307E\u305B\u3093\u3002"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: resetAppCache }, "\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3059"))))), bgTarget && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => setBgTarget(null) }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, bgTarget.label, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-period" }, " ", year, "\u5E74\u306E", bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97" : bgTarget.kind === "income" ? "\u6708\u306E\u53CE\u5165" : "\u6708\u4E88\u7B97")), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: () => setBgTarget(null), "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), bgTarget.kind === "note" ? /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u91D1\u984D\u306F\u53CE\u5165\u304B\u3089\u56FA\u5B9A\u8CBB\u3068\u4E88\u5B9A\u8CBB\u3092\u5F15\u3044\u305F\u6B8B\u308A\u306A\u306E\u3067\u3001\u3053\u3053\u3067\u306F\u5909\u3048\u3089\u308C\u307E\u305B\u3093\u3002 \u5F15\u304D\u843D\u3068\u3057\u5148\u3068\u30E1\u30E2\u3060\u3051\u8A2D\u5B9A\u3067\u304D\u307E\u3059\u3002") : /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97\uFF08\u5186\uFF09" : bgTarget.kind === "income" ? "\u6BCE\u6708\u306E\u53CE\u5165\uFF08\u5186\uFF09" : "\u6708\u4E88\u7B97\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(AmountField, { value: bgAmount, onChange: setBgAmount })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5F15\u304D\u843D\u3068\u3057\u5148\uFF08\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: bgMethod, onChange: (ev) => setBgMethod(ev.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u9078\u3070\u306A\u3044"), methods.map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u6839\u62E0\u30E1\u30E2\uFF08\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: bgMemo, onChange: (ev) => setBgMemo(ev.target.value), placeholder: "5,000x6\u4EBA+VD" })), bgError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, bgError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitBudget }, "\u4FDD\u5B58\u3059\u308B"))), toast && /* @__PURE__ */ React.createElement("div", { className: "kb-toast" }, toast)), /* @__PURE__ */ React.createElement("nav", { className: "kb-nav" }, /* @__PURE__ */ React.createElement("div", { className: "kb-nav-inner" }, TABS.map(({ key, label, icon: Icon }) => /* @__PURE__ */ React.createElement("button", { key, className: tab === key ? "on" : "", onClick: () => setTab(key) }, /* @__PURE__ */ React.createElement(Icon, { size: 20 }), /* @__PURE__ */ React.createElement("span", null, label))))));
+    } }, "\u8AAD\u307F\u8FBC\u307F\u76F4\u3059")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u63A5\u7D9A\u5148"), /* @__PURE__ */ React.createElement("div", { className: "kb-savebox", style: { wordBreak: "break-all", fontFamily: "ui-monospace, monospace", fontSize: 10.5 } }, KakeiboAPI.currentBookName(), /* @__PURE__ */ React.createElement("br", null), KakeiboAPI.getUrl()), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => {
+      setManageOpen(false);
+      setBooksOpen(true);
+    } }, "\u5BB6\u8A08\u7C3F\u306E\u8A2D\u5B9A")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u30A2\u30D7\u30EA\u306E\u66F4\u65B0"), /* @__PURE__ */ React.createElement("div", { className: "kb-savebox" }, "2\u56DE\u76EE\u304B\u3089\u306F\u901A\u4FE1\u3092\u5F85\u305F\u305A\u306B\u958B\u3051\u308B\u3088\u3046\u3001\u30A2\u30D7\u30EA\u672C\u4F53\u3092\u7AEF\u672B\u306B\u63A7\u3048\u3066\u3044\u307E\u3059\u3002 \u753B\u9762\u304C\u53E4\u3044\u307E\u307E\u5909\u308F\u3089\u306A\u3044\u3068\u304D\u306F\u3001\u305D\u306E\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u8A18\u9332\u306B\u306F\u5F71\u97FF\u3057\u307E\u305B\u3093\u3002"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: resetAppCache }, "\u63A7\u3048\u3092\u6D88\u3057\u3066\u958B\u304D\u76F4\u3059"))))), bgTarget && /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-backdrop", onClick: () => setBgTarget(null) }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet", onClick: (ev) => ev.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "kb-sheet-head" }, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-title" }, bgTarget.label, /* @__PURE__ */ React.createElement("span", { className: "kb-sheet-period" }, " ", year, "\u5E74\u306E", bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97" : bgTarget.kind === "income" ? "\u6708\u306E\u53CE\u5165" : "\u6708\u4E88\u7B97")), /* @__PURE__ */ React.createElement("button", { className: "kb-close", onClick: () => setBgTarget(null), "aria-label": "\u9589\u3058\u308B" }, /* @__PURE__ */ React.createElement(X, { size: 19 }))), bgTarget.kind === "note" ? /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u91D1\u984D\u306F\u53CE\u5165\u304B\u3089\u56FA\u5B9A\u8CBB\u3068\u4E88\u5B9A\u8CBB\u3092\u5F15\u3044\u305F\u6B8B\u308A\u306A\u306E\u3067\u3001\u3053\u3053\u3067\u306F\u5909\u3048\u3089\u308C\u307E\u305B\u3093\u3002 \u5F15\u304D\u843D\u3068\u3057\u5148\u3068\u30E1\u30E2\u3060\u3051\u8A2D\u5B9A\u3067\u304D\u307E\u3059\u3002") : /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, bgTarget.kind === "annual" ? "\u5E74\u9593\u4E88\u7B97\uFF08\u5186\uFF09" : bgTarget.kind === "income" ? "\u6BCE\u6708\u306E\u53CE\u5165\uFF08\u5186\uFF09" : "\u6708\u4E88\u7B97\uFF08\u5186\uFF09"), /* @__PURE__ */ React.createElement(AmountField, { value: bgAmount, onChange: setBgAmount })), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u5F15\u304D\u843D\u3068\u3057\u5148\uFF08\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: bgMethod, onChange: (ev) => setBgMethod(ev.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u9078\u3070\u306A\u3044"), methods.map((m) => /* @__PURE__ */ React.createElement("option", { key: m, value: m }, m)))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u6839\u62E0\u30E1\u30E2\uFF08\u4EFB\u610F\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: bgMemo, onChange: (ev) => setBgMemo(ev.target.value), placeholder: "5,000x6\u4EBA+VD" })), bgError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, bgError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitBudget }, "\u4FDD\u5B58\u3059\u308B"))), toast && /* @__PURE__ */ React.createElement("div", { className: "kb-toast" }, toast)), /* @__PURE__ */ React.createElement("nav", { className: "kb-nav" }, /* @__PURE__ */ React.createElement("div", { className: "kb-nav-inner" }, TABS.map(({ key, label, icon: Icon }) => /* @__PURE__ */ React.createElement("button", { key, className: tab === key ? "on" : "", onClick: () => setTab(key) }, /* @__PURE__ */ React.createElement(Icon, { size: 20 }), /* @__PURE__ */ React.createElement("span", null, label))))));
   }
   ReactDOM.createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(KakeiboApp, null));
 })();

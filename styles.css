@@ -32,9 +32,25 @@ body { background: #F2F3F5; }
 .kb-topbar { background: var(--card); border-bottom: 1px solid var(--line); }
 .kb-topbar .kb-bar-inner { padding: 14px 16px; justify-content: space-between; }
 .kb-title { font-size: 16px; font-weight: 700; }
+/* 見出しは家計簿の名前。押すと切り替えの一覧が開く */
+.kb-booktitle {
+  display: flex; align-items: center; gap: 3px;
+  border: none; background: transparent; padding: 0; cursor: pointer;
+  font-family: inherit; color: var(--ink);
+  font-size: 16px; font-weight: 700;
+  min-width: 0;
+}
+.kb-booktitle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-booktitle svg { color: var(--sub); flex-shrink: 0; }
+/* 切り替えの一覧で、名前を押せる範囲を行いっぱいに広げる */
+.kb-bookpick {
+  flex: 1; min-width: 0; border: none; background: transparent; padding: 0;
+  text-align: left; font-family: inherit; color: inherit; cursor: pointer;
+}
 .kb-yearpick { display: flex; align-items: center; gap: 4px; }
 .kb-yearbtn { width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--sub); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .kb-yearbtn:hover { background: var(--bg); }
+.kb-yearbtn:disabled { opacity: 0.4; cursor: default; }
 .kb-yearlabel { font-size: 13px; font-weight: 700; min-width: 54px; text-align: center; font-feature-settings: "tnum"; }
 
 .kb-body { padding: 14px 12px 24px; }
@@ -222,6 +238,7 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 .kb-setup h1 { font-size: 17px; margin: 0 0 6px; }
 .kb-setup p { font-size: 13px; color: #8A9099; line-height: 1.8; margin: 0 0 16px; }
 .kb-setup input { width: 100%; padding: 11px 12px; font-size: 16px; border: 1px solid #E8E9EC; border-radius: 9px; box-sizing: border-box; font-family: ui-monospace, Menlo, monospace; background: #fff; color: #1F2328; }
+.kb-setup input + input { margin-top: 8px; }
 .kb-setup button { width: 100%; margin-top: 12px; padding: 13px; font-size: 15px; font-weight: 700; border: none; border-radius: 10px; background: #2FA85A; color: #fff; font-family: inherit; cursor: pointer; }
 .kb-setup .kb-err { margin-top: 12px; }
 
