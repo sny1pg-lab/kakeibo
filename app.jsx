@@ -287,14 +287,41 @@ function entryTitle(e) {
 }
 
 /**
- * 明細の見出し。内容の横に、金額を出した式を控えめに添える。
- * 立て替えて後で受け取った場合など、あとから理由が分かるようにするため。
+ * 一覧の1行の見出し。明細も振替も立替も同じ形にする。
  */
-function EntryTitle({ e }) {
+function rowTitle(x, kind) {
+  if (kind === "transfer") return x.memo || "振替";
+  if (kind === "settlement") return x.memo || "";
+  return entryTitle(x);
+}
+
+/** 下段の補足。既定は支払い方法で、振替だけ振替元と振替先を出す。 */
+function rowSub(x, kind) {
+  if (kind === "transfer") return `振替・${x.from} → ${x.to}`;
+  return x.method || "";
+}
+
+/**
+ * 一覧に出す1行の中身。履歴・明細・立替・未確定のどこでもこれを使う。
+ *
+ * 画面ごとに同じ見た目を別々に書いていたころは、直しが片方にしか入らず
+ * 見た目がずれた（未確定の一覧だけ「内訳 内容」にならず、式も出ていなかった）。
+ * ここに集約したので、見出しの決まりを変えるときは1か所だけ直せばよい。
+ *
+ * 上段は「内訳 内容」と、金額を出した式を控えめに添えたもの。
+ * 立て替えて後で受け取った場合など、あとから理由が分かるようにするため。
+ * 下段は補足。中身が無くても場所は確保して、一覧の行の高さを揃える。
+ * sub を渡すと下段だけ差し替えられる（未確定はカテゴリも要るため）。
+ */
+function RowMain({ x, kind = x.kind, sub, ...rest }) {
+  const note = sub === undefined ? rowSub(x, kind) : sub;
   return (
-    <div className="kb-rowtitle">
-      {entryTitle(e)}
-      {e.formula ? <span className="kb-formula">{e.formula}</span> : null}
+    <div className="kb-rowmain" {...rest}>
+      <div className="kb-rowtitle">
+        {rowTitle(x, kind)}
+        {x.formula ? <span className="kb-formula">{x.formula}</span> : null}
+      </div>
+      <div className="kb-rowsub">{note || "\u00A0"}</div>
     </div>
   );
 }
@@ -1874,24 +1901,24 @@ function KakeiboApp() {
                             <span className="kb-detail-date">
                               {Number(r.date.slice(5, 7))}/{Number(r.date.slice(8, 10))}
                             </span>
-                            <div
-                              className="kb-rowmain"
+                            {/* 下段は、一覧にカテゴリの色が出ないぶんどこの記録かを補う。
+                                内訳は上段に出るようになったので、ここには重ねない */}
+                            <RowMain
+                              x={r}
                               style={{ cursor: "pointer" }}
                               onClick={() => {
                                 if (r.kind === "transfer") openTrEdit(r);
                                 else if (r.kind === "settlement") openTkEdit(r);
                                 else openEntryEdit(catById(r.catId), r);
                               }}
-                            >
-                              <div className="kb-rowtitle">{r.memo || r.tag || r.catName || "（内容なし）"}</div>
-                              <div className="kb-rowsub">
-                                {r.kind === "transfer"
+                              sub={
+                                r.kind === "transfer"
                                   ? `振替・${r.from} → ${r.to}`
                                   : r.kind === "settlement"
-                                    ? `立替・${r.party}`
-                                    : [isIncome(r) ? "収入" : null, r.catName, r.tag, r.method].filter(Boolean).join("・")}
-                              </div>
-                            </div>
+                                    ? [`立替・${r.party}`, r.method].filter(Boolean).join("・")
+                                    : [isIncome(r) ? "収入" : null, r.catName, r.method].filter(Boolean).join("・")
+                              }
+                            />
                             <span className="kb-amount" style={{ color: "var(--pending)" }}>
                               {isIncome(r) ? "+" : ""}{yen(r.amount)}
                             </span>
@@ -1937,20 +1964,14 @@ function KakeiboApp() {
                         {day.rows.map((e) => e.kind === "transfer" ? (
                           <button className="kb-row" key={e.id} onClick={() => openTrEdit(e)}>
                             <div className="kb-dot" style={{ background: "#AEB4BC" }}><ArrowLeftRight size={15} /></div>
-                            <div className="kb-rowmain">
-                              <div className="kb-rowtitle">{e.memo || "振替"}</div>
-                              <div className="kb-rowsub">振替・{e.from} → {e.to}</div>
-                            </div>
+                            <RowMain x={e} />
                             <span className="kb-amount" style={{ color: e.pending ? "var(--pending)" : "var(--sub)" }}>{yen(e.amount)}</span>
                             <ChevronRight size={17} className="kb-chev" />
                           </button>
                         ) : (
                           <button className="kb-row" key={e.id} onClick={() => openEntryEdit(catById(e.catId), e)}>
                             <div className="kb-dot" style={{ background: e.color }}>{e.catName.slice(0, 1)}</div>
-                            <div className="kb-rowmain">
-                              <EntryTitle e={e} />
-                              <div className="kb-rowsub">{e.method}</div>
-                            </div>
+                            <RowMain x={e} />
                             <span className="kb-amount" style={amountStyle(e)}>
                               {isIncome(e) ? "+" : ""}{yen(Math.abs(Number(e.amount) || 0))}
                             </span>
@@ -2143,13 +2164,7 @@ function KakeiboApp() {
                         <span className="kb-detail-date">
                           {t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}` : "—"}
                         </span>
-                        <div className="kb-rowmain" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }}>
-                          <div className="kb-rowtitle">
-                            {t.memo}
-                            {t.formula ? <span className="kb-formula">{t.formula}</span> : null}
-                          </div>
-                          {t.method && <div className="kb-rowsub">{t.method}</div>}
-                        </div>
+                        <RowMain x={t} kind="settlement" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }} />
                         <span className="kb-amount" style={{ color: t.pending ? "var(--pending)" : t.settled ? "var(--sub)" : "var(--red)" }}>{yen(t.amount)}</span>
                         <button
                           className="kb-iconbtn"
@@ -2218,10 +2233,7 @@ function KakeiboApp() {
                           <span className="kb-detail-date">
                             {e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}` : "—"}
                           </span>
-                          <div className="kb-rowmain">
-                            <EntryTitle e={e} />
-                            <div className="kb-rowsub">{e.method}</div>
-                          </div>
+                          <RowMain x={e} />
                           <span className="kb-amount" style={amountStyle(e)}>
                             {isIncome(e) ? "+" : ""}{yen(Math.abs(Number(e.amount) || 0))}
                           </span>

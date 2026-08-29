@@ -55,9 +55,12 @@ body { background: #F2F3F5; }
 .kb-rowtitle { font-size: 14.5px; font-weight: 500; line-height: 20px; }
 .kb-rowsub { font-size: 11px; color: var(--sub); margin-top: 2px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 明細の金額を出した式。日付などと同じ控えめな色で内容の横に添える */
-.kb-formula { font-size: 11px; font-weight: 400; color: var(--sub); margin-left: 6px; font-feature-settings: "tnum"; }
+.kb-formula { font-size: 11px; font-weight: 400; color: var(--sub); margin-left: 6px; font-feature-settings: "tnum"; line-height: 0; }
 /* 分析タブの補足。行を増やさず名前の横に添える */
-.kb-titlenote { font-size: 11px; font-weight: 400; color: var(--sub); margin-left: 6px; }
+.kb-titlenote { font-size: 11px; font-weight: 400; color: var(--sub); margin-left: 6px; line-height: 0; }
+/* line-height: 0 は、小さい文字を横に添えても行が1px高くならないようにするため。
+   文字の大きさが違うと、行の高さを同じにしても文字の並ぶ位置がわずかにずれ、
+   その分だけ行が伸びる。0 にすると高さに関わらなくなり、見え方は変わらない */
 .kb-note { font-size: 11px; color: var(--sub); line-height: 1.55; padding: 7px 3px 0; }
 .kb-rowright { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .kb-amount { font-size: 15px; font-weight: 700; line-height: 20px; font-feature-settings: "tnum"; }
