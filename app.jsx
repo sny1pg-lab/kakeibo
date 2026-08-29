@@ -2216,8 +2216,10 @@ function KakeiboApp() {
                         // 月別のとき、自由費以外は月の予算が実感と合わないので
                         // 残と超過は出さず、使った額だけを見せる
                         const showBudget = anaScope === "year" || cat.group === "自由費";
-                        const over = showBudget && budget > 0 && spent > budget;
-                        const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+                        // 予算0のカテゴリも、使っていれば超過として出す。
+                        // budget > 0 を条件に入れていたころは「残 ¥161,238」と出て逆に見えた
+                        const over = showBudget && spent > budget;
+                        const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : (spent > 0 ? 100 : 0);
                         return (
                           <button className="kb-row" key={cat.id} onClick={() => openDetail("category", cat.id)}>
                             <div className="kb-dot" style={{ background: color }}>{cat.name.slice(0, 1)}</div>
