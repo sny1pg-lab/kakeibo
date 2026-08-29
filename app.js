@@ -39,15 +39,10 @@
     { key: "method", label: "\u652F\u6255\u3044\u65B9\u6CD5", hint: "\u8A18\u9332\u306B\u5F15\u304D\u843D\u3068\u3057\u5148\u3092\u6B8B\u3057\u307E\u3059" }
   ];
   var MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP, FEATURE_GROUP];
-  var DEFAULT_PARTIES = ["\u751F\u6D3B\u8CBB", "\u304A\u3044\u306C", "\u5A2F\u697D\u8CBB", "\u5BB6\u5177\u5BB6\u96FB", "\u305D\u306E\u4ED6", "KITI", "\u30A6\u30A7\u30EB\u30DC\u30F3"];
-  var DEFAULT_METHODS = ["\u697D\u5929\u30AB\u30FC\u30C9", "\u697D\u5929\u30DA\u30A4", "\u697D\u5929\u30AD\u30E3\u30C3\u30B7\u30E5", "\u697D\u5929\u9280\u884C", "PayPay\u30AB\u30FC\u30C9", "PayPay\u6B8B\u9AD8", "PASMO", "\u30B9\u30BF\u30D0\u30AB\u30FC\u30C9", "NL\u30AB\u30FC\u30C9", "\u73FE\u91D1", "\u305D\u306E\u4ED6"];
   var HIST_GROUP = "group:";
   var INCOME_TARGET = "income";
   function isMaster(c) {
     return MASTER_GROUPS.indexOf(c.group) >= 0;
-  }
-  function defaultsOf(group) {
-    return group === PARTY_GROUP ? DEFAULT_PARTIES : DEFAULT_METHODS;
   }
   function withCurrent(list, value) {
     return value && list.indexOf(value) < 0 ? list.concat([value]) : list;
@@ -632,7 +627,7 @@
     const [enDate, setEnDate] = useState("");
     const [enTag, setEnTag] = useState("");
     const [enMemo, setEnMemo] = useState("");
-    const [enMethod, setEnMethod] = useState(DEFAULT_METHODS[0]);
+    const [enMethod, setEnMethod] = useState("");
     const [enAmount, setEnAmount] = useState("");
     const [enType, setEnType] = useState("expense");
     const [enPending, setEnPending] = useState(true);
@@ -653,7 +648,7 @@
     const [tkEditId, setTkEditId] = useState(null);
     const [tkDate, setTkDate] = useState("");
     const [tkMemo, setTkMemo] = useState("");
-    const [tkParty, setTkParty] = useState(DEFAULT_PARTIES[0]);
+    const [tkParty, setTkParty] = useState("");
     const [tkAmount, setTkAmount] = useState("");
     const [tkPending, setTkPending] = useState(true);
     const [tkError, setTkError] = useState("");
@@ -662,8 +657,8 @@
     const [trFormOpen, setTrFormOpen] = useState(false);
     const [trEditId, setTrEditId] = useState(null);
     const [trDate, setTrDate] = useState("");
-    const [trFrom, setTrFrom] = useState(DEFAULT_METHODS[0]);
-    const [trTo, setTrTo] = useState(DEFAULT_METHODS[6]);
+    const [trFrom, setTrFrom] = useState("");
+    const [trTo, setTrTo] = useState("");
     const [trAmount, setTrAmount] = useState("");
     const [trMemo, setTrMemo] = useState("");
     const [trPending, setTrPending] = useState(true);
@@ -752,7 +747,10 @@
     const [bgError, setBgError] = useState("");
     const groupDefs = useMemo(() => {
       const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === GROUP_ROW);
-      return row && parseGroups(row.tags) || LEGACY_GROUPS;
+      const saved = row && parseGroups(row.tags);
+      if (saved) return saved;
+      const used = categories.filter((c) => !isMaster(c)).map((c) => c.group);
+      return LEGACY_GROUPS.some((g) => used.indexOf(g.name) >= 0) ? LEGACY_GROUPS : [];
     }, [categories]);
     const groupOrder = useMemo(() => groupDefs.map((g) => g.name), [groupDefs]);
     const kindOf = useCallback((name) => {
@@ -902,10 +900,7 @@
       (group) => categories.filter((c) => c.group === group),
       [categories]
     );
-    const namesOf = useCallback((group) => {
-      const rows = masterRowsOf(group);
-      return rows.length ? rows.map((r) => r.name) : defaultsOf(group);
-    }, [masterRowsOf]);
+    const namesOf = useCallback((group) => masterRowsOf(group).map((r) => r.name), [masterRowsOf]);
     const parties = useMemo(() => namesOf(PARTY_GROUP), [namesOf]);
     const methods = useMemo(() => namesOf(METHOD_GROUP), [namesOf]);
     const uses = useMemo(() => {
@@ -952,22 +947,13 @@
         note: ""
       };
     }
-    function seedMaster(group, mapName) {
-      const rows = [];
-      defaultsOf(group).forEach((n) => {
-        const next = mapName ? mapName(n) : n;
-        if (next) rows.push(makeMasterRow(group, next));
-      });
-      return rows;
-    }
     function addMaster(group, rawName) {
       const name = (rawName || "").trim();
       if (!name) return "\u540D\u524D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044";
       if (namesOf(group).indexOf(name) >= 0) return "\u540C\u3058\u540D\u524D\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059";
-      const created = masterRowsOf(group).length ? [] : seedMaster(group);
-      created.push(makeMasterRow(group, name));
-      setCategories((p) => [...p, ...created]);
-      created.forEach(saveCategory);
+      const row = makeMasterRow(group, name);
+      setCategories((p) => [...p, row]);
+      saveCategory(row);
       return "";
     }
     function renameMaster(group, oldName, rawName) {
@@ -975,18 +961,11 @@
       if (!name) return "\u540D\u524D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044";
       if (name === oldName) return "";
       if (namesOf(group).indexOf(name) >= 0) return "\u540C\u3058\u540D\u524D\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059";
-      const rows = masterRowsOf(group);
-      if (rows.length) {
-        const target = rows.find((r) => r.name === oldName);
-        if (!target) return "\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F";
-        const updated = { ...target, name };
-        setCategories((p) => p.map((c) => c.id === target.id ? updated : c));
-        saveCategory(updated);
-      } else {
-        const created = seedMaster(group, (n) => n === oldName ? name : n);
-        setCategories((p) => [...p, ...created]);
-        created.forEach(saveCategory);
-      }
+      const target = masterRowsOf(group).find((r) => r.name === oldName);
+      if (!target) return "\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F";
+      const updated = { ...target, name };
+      setCategories((p) => p.map((c) => c.id === target.id ? updated : c));
+      saveCategory(updated);
       if (group === PARTY_GROUP) {
         const hit = settlements.filter((s) => s.party === oldName);
         if (hit.length) {
@@ -1015,18 +994,10 @@
     function deleteMaster(group, name) {
       const used = masterUseCount(group, name);
       if (used > 0) return `${used}\u4EF6\u306E\u8A18\u9332\u3067\u4F7F\u308F\u308C\u3066\u3044\u308B\u305F\u3081\u524A\u9664\u3067\u304D\u307E\u305B\u3093`;
-      if (namesOf(group).length <= 1) return "\u6700\u5F8C\u306E\u3072\u3068\u3064\u306F\u524A\u9664\u3067\u304D\u307E\u305B\u3093";
-      const rows = masterRowsOf(group);
-      if (rows.length) {
-        const target = rows.find((r) => r.name === name);
-        if (!target) return "\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F";
-        setCategories((p) => p.filter((c) => c.id !== target.id));
-        KakeiboAPI.remove("categories", target.id);
-      } else {
-        const created = seedMaster(group, (n) => n === name ? null : n);
-        setCategories((p) => [...p, ...created]);
-        created.forEach(saveCategory);
-      }
+      const target = masterRowsOf(group).find((r) => r.name === name);
+      if (!target) return "\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F";
+      setCategories((p) => p.filter((c) => c.id !== target.id));
+      KakeiboAPI.remove("categories", target.id);
       return "";
     }
     const monthlyGroups = useMemo(
@@ -1942,7 +1913,7 @@
         },
         placeholder: "\u5185\u8A33\u540D\u3092\u5165\u529B"
       }
-    ), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", style: { width: "auto", padding: "0 16px" }, onClick: addTag }, "\u8FFD\u52A0"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u88DC\u8DB3\uFF08\u4EFB\u610F\u30FB\u4E00\u89A7\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fNote, onChange: (ev) => setFNote(ev.target.value), placeholder: "2026/6\u301C\u958B\u59CB" })), fError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, fError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitCat }, catMode === "add" ? "\u8FFD\u52A0\u3059\u308B" : "\u4FDD\u5B58\u3059\u308B"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setCatFormOpen(false) }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: c.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, kindOf(c.group) === KIND_YEAR ? `\u5E74\u9593\u4E88\u7B97 ${yenExact(budgetOf(c).annual)}` : kindOf(c.group) === KIND_NONE ? "\u4E88\u7B97\u5916" : `\u6708\u4E88\u7B97 ${yenExact(budgetOf(c).monthly)}`, c.tags.length > 0 ? `\u30FB\u5185\u8A33${c.tags.length}\u4EF6` : "", c.note ? `\u3000${c.note}` : "")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => openCatEdit(c), "aria-label": "\u7DE8\u96C6" }, /* @__PURE__ */ React.createElement(Pencil, { size: 14 })), catDeleteId === c.id ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", style: { color: "var(--red)" }, onClick: () => deleteCategory(c.id), "aria-label": "\u524A\u9664\u3092\u78BA\u5B9A" }, /* @__PURE__ */ React.createElement(Check, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(null), "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(c.id), "aria-label": "\u524A\u9664" }, /* @__PURE__ */ React.createElement(Trash2, { size: 14 })))))))), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", style: { marginTop: 14 }, onClick: openCatAdd }, "\u30AB\u30C6\u30B4\u30EA\u3092\u8FFD\u52A0"), /* @__PURE__ */ React.createElement(
+    ), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", style: { width: "auto", padding: "0 16px" }, onClick: addTag }, "\u8FFD\u52A0"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u88DC\u8DB3\uFF08\u4EFB\u610F\u30FB\u4E00\u89A7\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fNote, onChange: (ev) => setFNote(ev.target.value), placeholder: "2026/6\u301C\u958B\u59CB" })), fError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, fError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitCat }, catMode === "add" ? "\u8FFD\u52A0\u3059\u308B" : "\u4FDD\u5B58\u3059\u308B"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setCatFormOpen(false) }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, budgetCats.filter((c) => c.group === g).map((c) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: c.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, kindOf(c.group) === KIND_YEAR ? `\u5E74\u9593\u4E88\u7B97 ${yenExact(budgetOf(c).annual)}` : kindOf(c.group) === KIND_NONE ? "\u4E88\u7B97\u5916" : `\u6708\u4E88\u7B97 ${yenExact(budgetOf(c).monthly)}`, c.tags.length > 0 ? `\u30FB\u5185\u8A33${c.tags.length}\u4EF6` : "", c.note ? `\u3000${c.note}` : "")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => openCatEdit(c), "aria-label": "\u7DE8\u96C6" }, /* @__PURE__ */ React.createElement(Pencil, { size: 14 })), catDeleteId === c.id ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", style: { color: "var(--red)" }, onClick: () => deleteCategory(c.id), "aria-label": "\u524A\u9664\u3092\u78BA\u5B9A" }, /* @__PURE__ */ React.createElement(Check, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(null), "aria-label": "\u53D6\u6D88" }, /* @__PURE__ */ React.createElement(X, { size: 14 }))) : /* @__PURE__ */ React.createElement("button", { className: "kb-iconbtn", onClick: () => setCatDeleteId(c.id), "aria-label": "\u524A\u9664" }, /* @__PURE__ */ React.createElement(Trash2, { size: 14 })))))))), groupDefs.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u307E\u305A\u30B0\u30EB\u30FC\u30D7\u3092\u4F5C\u3063\u3066\u304F\u3060\u3055\u3044\u3002\u30AB\u30C6\u30B4\u30EA\u306F\u30B0\u30EB\u30FC\u30D7\u306E\u4E2D\u306B\u4E26\u3073\u307E\u3059\u3002") : /* @__PURE__ */ React.createElement("button", { className: "kb-btn", style: { marginTop: 14 }, onClick: openCatAdd }, "\u30AB\u30C6\u30B4\u30EA\u3092\u8FFD\u52A0"), /* @__PURE__ */ React.createElement(
       GroupList,
       {
         defs: groupDefs,

@@ -71,10 +71,8 @@ const FEATURES = [
 ];
 const MASTER_GROUPS = [PARTY_GROUP, METHOD_GROUP, FEATURE_GROUP];
 
-// まだ一度も編集していないときに見せる中身。
-// 画面から変更した時点で、この一覧がそのまま実体としてシートに書き出される。
-const DEFAULT_PARTIES = ["生活費", "おいぬ", "娯楽費", "家具家電", "その他", "KITI", "ウェルボン"];
-const DEFAULT_METHODS = ["楽天カード", "楽天ペイ", "楽天キャッシュ", "楽天銀行", "PayPayカード", "PayPay残高", "PASMO", "スタバカード", "NLカード", "現金", "その他"];
+// 立替先も支払方法も、組み込みの既定値は置いていない。家計簿ごとに中身が違うため。
+// 新しい家計簿は空から始めて、カテゴリ編集で足していく。
 
 // 履歴の絞り込みで、固定費のカテゴリをひとまとめに扱うための印。
 // カテゴリのidと混ざらないよう、idには使われない形にしてある。
@@ -84,7 +82,6 @@ const HIST_GROUP = "group:";
 const INCOME_TARGET = "income";
 
 function isMaster(c) { return MASTER_GROUPS.indexOf(c.group) >= 0; }
-function defaultsOf(group) { return group === PARTY_GROUP ? DEFAULT_PARTIES : DEFAULT_METHODS; }
 
 /**
  * 一覧から消した名前でも、その記録を開いたときは選べるようにしておく。
@@ -965,7 +962,7 @@ function KakeiboApp() {
   const [enDate, setEnDate] = useState("");
   const [enTag, setEnTag] = useState("");
   const [enMemo, setEnMemo] = useState("");
-  const [enMethod, setEnMethod] = useState(DEFAULT_METHODS[0]);
+  const [enMethod, setEnMethod] = useState("");
   const [enAmount, setEnAmount] = useState("");
   const [enType, setEnType] = useState("expense");
   const [enPending, setEnPending] = useState(true);
@@ -988,7 +985,7 @@ function KakeiboApp() {
   const [tkEditId, setTkEditId] = useState(null);
   const [tkDate, setTkDate] = useState("");
   const [tkMemo, setTkMemo] = useState("");
-  const [tkParty, setTkParty] = useState(DEFAULT_PARTIES[0]);
+  const [tkParty, setTkParty] = useState("");
   const [tkAmount, setTkAmount] = useState("");
   const [tkPending, setTkPending] = useState(true);
   const [tkError, setTkError] = useState("");
@@ -998,8 +995,8 @@ function KakeiboApp() {
   const [trFormOpen, setTrFormOpen] = useState(false);
   const [trEditId, setTrEditId] = useState(null);
   const [trDate, setTrDate] = useState("");
-  const [trFrom, setTrFrom] = useState(DEFAULT_METHODS[0]);
-  const [trTo, setTrTo] = useState(DEFAULT_METHODS[6]);
+  const [trFrom, setTrFrom] = useState("");
+  const [trTo, setTrTo] = useState("");
   const [trAmount, setTrAmount] = useState("");
   const [trMemo, setTrMemo] = useState("");
   const [trPending, setTrPending] = useState(true);
@@ -1112,7 +1109,12 @@ function KakeiboApp() {
    */
   const groupDefs = useMemo(() => {
     const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === GROUP_ROW);
-    return (row && parseGroups(row.tags)) || LEGACY_GROUPS;
+    const saved = row && parseGroups(row.tags);
+    if (saved) return saved;
+    // 設定が無い家計簿。すでに従来のグループのカテゴリがあれば、これまでどおり動かす。
+    // 中身が空の家計簿には何も置かない。ほかの家計簿の分け方を持ち込まないため
+    const used = categories.filter((c) => !isMaster(c)).map((c) => c.group);
+    return LEGACY_GROUPS.some((g) => used.indexOf(g.name) >= 0) ? LEGACY_GROUPS : [];
   }, [categories]);
   const groupOrder = useMemo(() => groupDefs.map((g) => g.name), [groupDefs]);
   const kindOf = useCallback((name) => {
@@ -1300,11 +1302,7 @@ function KakeiboApp() {
     [categories]
   );
 
-  // 実体が無いうちは組み込みの既定値を見せる
-  const namesOf = useCallback((group) => {
-    const rows = masterRowsOf(group);
-    return rows.length ? rows.map((r) => r.name) : defaultsOf(group);
-  }, [masterRowsOf]);
+  const namesOf = useCallback((group) => masterRowsOf(group).map((r) => r.name), [masterRowsOf]);
 
   const parties = useMemo(() => namesOf(PARTY_GROUP), [namesOf]);
   const methods = useMemo(() => namesOf(METHOD_GROUP), [namesOf]);
@@ -1357,30 +1355,14 @@ function KakeiboApp() {
     };
   }
 
-  /**
-   * 既定値を見せているだけの状態から編集を始めたときは、
-   * まず既定値をそのまま実体として書き出す。
-   * これをしないと、1件足しただけで残りが消えたことになってしまう。
-   * mapName で、書き出す途中に名前を差し替えたり除いたりできる。
-   */
-  function seedMaster(group, mapName) {
-    const rows = [];
-    defaultsOf(group).forEach((n) => {
-      const next = mapName ? mapName(n) : n;
-      if (next) rows.push(makeMasterRow(group, next));
-    });
-    return rows;
-  }
-
   function addMaster(group, rawName) {
     const name = (rawName || "").trim();
     if (!name) return "名前を入力してください";
     if (namesOf(group).indexOf(name) >= 0) return "同じ名前がすでにあります";
 
-    const created = masterRowsOf(group).length ? [] : seedMaster(group);
-    created.push(makeMasterRow(group, name));
-    setCategories((p) => [...p, ...created]);
-    created.forEach(saveCategory);
+    const row = makeMasterRow(group, name);
+    setCategories((p) => [...p, row]);
+    saveCategory(row);
     return "";
   }
 
@@ -1390,18 +1372,11 @@ function KakeiboApp() {
     if (name === oldName) return "";
     if (namesOf(group).indexOf(name) >= 0) return "同じ名前がすでにあります";
 
-    const rows = masterRowsOf(group);
-    if (rows.length) {
-      const target = rows.find((r) => r.name === oldName);
-      if (!target) return "見つかりませんでした";
-      const updated = { ...target, name };
-      setCategories((p) => p.map((c) => (c.id === target.id ? updated : c)));
-      saveCategory(updated);
-    } else {
-      const created = seedMaster(group, (n) => (n === oldName ? name : n));
-      setCategories((p) => [...p, ...created]);
-      created.forEach(saveCategory);
-    }
+    const target = masterRowsOf(group).find((r) => r.name === oldName);
+    if (!target) return "見つかりませんでした";
+    const updated = { ...target, name };
+    setCategories((p) => p.map((c) => (c.id === target.id ? updated : c)));
+    saveCategory(updated);
 
     // 名前で結び付けているので、すでにある記録も一緒に書き換える
     if (group === PARTY_GROUP) {
@@ -1433,19 +1408,10 @@ function KakeiboApp() {
   function deleteMaster(group, name) {
     const used = masterUseCount(group, name);
     if (used > 0) return `${used}件の記録で使われているため削除できません`;
-    if (namesOf(group).length <= 1) return "最後のひとつは削除できません";
-
-    const rows = masterRowsOf(group);
-    if (rows.length) {
-      const target = rows.find((r) => r.name === name);
-      if (!target) return "見つかりませんでした";
-      setCategories((p) => p.filter((c) => c.id !== target.id));
-      KakeiboAPI.remove("categories", target.id);
-    } else {
-      const created = seedMaster(group, (n) => (n === name ? null : n));
-      setCategories((p) => [...p, ...created]);
-      created.forEach(saveCategory);
-    }
+    const target = masterRowsOf(group).find((r) => r.name === name);
+    if (!target) return "見つかりませんでした";
+    setCategories((p) => p.filter((c) => c.id !== target.id));
+    KakeiboAPI.remove("categories", target.id);
     return "";
   }
 
@@ -1830,7 +1796,7 @@ function KakeiboApp() {
   /* ---- 振替 ---- */
 
   function openTrNew() {
-    const to = methodAt(6);
+    const to = methodAt(6);   // 支払方法が無ければ空
     setTrEditId(null); setTrDate(todayInYear()); setTrFrom(methodAt(0)); setTrTo(to); setTrConfirmDel(false);
     // 内容は振替先の名前を初期値にする。「PASMO」「スタバカード」と書くのが常なので
     setTrAmount(""); setTrMemo(to); setTrPending(true); setTrError("");
@@ -3062,7 +3028,13 @@ function KakeiboApp() {
                       </div>
                     </div>
                   ))}
-                  <button className="kb-btn" style={{ marginTop: 14 }} onClick={openCatAdd}>カテゴリを追加</button>
+                  {groupDefs.length === 0 ? (
+                    <div className="kb-note">
+                      まずグループを作ってください。カテゴリはグループの中に並びます。
+                    </div>
+                  ) : (
+                    <button className="kb-btn" style={{ marginTop: 14 }} onClick={openCatAdd}>カテゴリを追加</button>
+                  )}
 
                   <GroupList
                     defs={groupDefs}
