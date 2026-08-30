@@ -879,7 +879,7 @@ function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
   );
 
   /** グループごとに見出しを挟みながらカテゴリを並べる。 */
-  const Section = ({ kind, amountOf, editKind }) => (
+  const Section = ({ kind, amountOf, editKind, subOf }) => (
     <>
       {groupsOf(kind).map((g) => {
         const list = inGroup(g.name);
@@ -893,7 +893,7 @@ function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
                   key={c.id}
                   label={c.name}
                   amount={amountOf(c)}
-                  memo={plan.per[c.id] ? plan.per[c.id].memo : ""}
+                  memo={subOf ? subOf(c) : (plan.per[c.id] ? plan.per[c.id].memo : "")}
                   onClick={() => onEdit({ target: c.id, label: c.name, kind: editKind })}
                 />
               ))}
@@ -961,7 +961,16 @@ function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
       {yearCats.length === 0 ? (
         <div className="kb-card"><div className="kb-empty">年間予算のカテゴリがありません</div></div>
       ) : (
-        <Section kind={KIND_YEAR} amountOf={(c) => (plan.per[c.id] ? plan.per[c.id].annual : 0)} editKind="annual" />
+        <Section
+          kind={KIND_YEAR}
+          amountOf={(c) => (plan.per[c.id] ? plan.per[c.id].annual : 0)}
+          editKind="annual"
+          /* 年額だけだと月にいくら使えるのか分からないので、12で割った額を添える */
+          subOf={(c) => [
+            `月平均 ${yenExact(plan.per[c.id] ? plan.per[c.id].annual / 12 : 0)}`,
+            plan.per[c.id] ? plan.per[c.id].memo : "",
+          ].filter(Boolean).join("　")}
+        />
       )}
 
       {yearCats.length > 0 && (

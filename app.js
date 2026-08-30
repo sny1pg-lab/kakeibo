@@ -618,7 +618,7 @@
     const noneCats = catsOf(KIND_NONE);
     const showHead = (kind) => named || groupsOf(kind).filter((g) => inGroup(g.name).length).length > 1;
     const Row = ({ label, amount, memo, onClick, derived, strong }) => /* @__PURE__ */ React.createElement("button", { className: "kb-row kb-bgrow", onClick, disabled: !onClick }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle", style: strong ? { fontWeight: 700 } : void 0 }, label), memo ? /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, memo) : null), /* @__PURE__ */ React.createElement("span", { className: "kb-amount", style: derived ? { color: "var(--pending)" } : void 0 }, amount === null ? "\u2014" : yenExact(amount)), onClick ? /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" }) : /* @__PURE__ */ React.createElement("span", { style: { width: 17 } }));
-    const Section = ({ kind, amountOf, editKind }) => /* @__PURE__ */ React.createElement(React.Fragment, null, groupsOf(kind).map((g) => {
+    const Section = ({ kind, amountOf, editKind, subOf }) => /* @__PURE__ */ React.createElement(React.Fragment, null, groupsOf(kind).map((g) => {
       const list = inGroup(g.name);
       if (!list.length) return null;
       return /* @__PURE__ */ React.createElement(React.Fragment, { key: g.name }, showHead(kind) && /* @__PURE__ */ React.createElement("div", { className: "kb-section-label sub" }, g.name), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, list.map((c) => /* @__PURE__ */ React.createElement(
@@ -627,7 +627,7 @@
           key: c.id,
           label: c.name,
           amount: amountOf(c),
-          memo: plan.per[c.id] ? plan.per[c.id].memo : "",
+          memo: subOf ? subOf(c) : plan.per[c.id] ? plan.per[c.id].memo : "",
           onClick: () => onEdit({ target: c.id, label: c.name, kind: editKind })
         }
       ))));
@@ -651,7 +651,18 @@
         derived: true,
         onClick: () => onEdit({ target: c.id, label: c.name, kind: "note" })
       }
-    )), yearCats.length > 0 && /* @__PURE__ */ React.createElement(Row, { label: "\u5E74\u9593\u4E88\u7B97", amount: plan.yearAnnual / 12, memo: "\u4E0B\u306E\u5E74\u9593\u4E88\u7B97\u306E\u5408\u8A08\u309212\u3067\u5272\u3063\u305F\u984D", derived: true }), !plan.hasRest && /* @__PURE__ */ React.createElement(Row, { label: "\u4F59\u308A", amount: plan.restAnnual / 12, memo: "\u53CE\u5165\u304B\u3089\u4E88\u7B97\u306E\u5408\u8A08\u3092\u5F15\u3044\u305F\u984D", derived: true })), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u6708\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.monthly))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xD712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.annual)))), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u5E74"), yearCats.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, "\u5E74\u9593\u4E88\u7B97\u306E\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308A\u307E\u305B\u3093")) : /* @__PURE__ */ React.createElement(Section, { kind: KIND_YEAR, amountOf: (c) => plan.per[c.id] ? plan.per[c.id].annual : 0, editKind: "annual" }), yearCats.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u5E74\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.yearAnnual))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xF712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.yearAnnual / 12)))), noneCats.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u4E88\u7B97\u5916"), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, noneCats.map((c) => /* @__PURE__ */ React.createElement(
+    )), yearCats.length > 0 && /* @__PURE__ */ React.createElement(Row, { label: "\u5E74\u9593\u4E88\u7B97", amount: plan.yearAnnual / 12, memo: "\u4E0B\u306E\u5E74\u9593\u4E88\u7B97\u306E\u5408\u8A08\u309212\u3067\u5272\u3063\u305F\u984D", derived: true }), !plan.hasRest && /* @__PURE__ */ React.createElement(Row, { label: "\u4F59\u308A", amount: plan.restAnnual / 12, memo: "\u53CE\u5165\u304B\u3089\u4E88\u7B97\u306E\u5408\u8A08\u3092\u5F15\u3044\u305F\u984D", derived: true })), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u6708\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.monthly))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xD712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.income.annual)))), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u5E74"), yearCats.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, "\u5E74\u9593\u4E88\u7B97\u306E\u30AB\u30C6\u30B4\u30EA\u304C\u3042\u308A\u307E\u305B\u3093")) : /* @__PURE__ */ React.createElement(
+      Section,
+      {
+        kind: KIND_YEAR,
+        amountOf: (c) => plan.per[c.id] ? plan.per[c.id].annual : 0,
+        editKind: "annual",
+        subOf: (c) => [
+          `\u6708\u5E73\u5747 ${yenExact(plan.per[c.id] ? plan.per[c.id].annual / 12 : 0)}`,
+          plan.per[c.id] ? plan.per[c.id].memo : ""
+        ].filter(Boolean).join("\u3000")
+      }
+    ), yearCats.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal" }, /* @__PURE__ */ React.createElement("span", null, "\u5408\u8A08\uFF08\u5E74\uFF09"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.yearAnnual))), /* @__PURE__ */ React.createElement("div", { className: "kb-bgtotal sub" }, /* @__PURE__ */ React.createElement("span", null, "\xF712"), /* @__PURE__ */ React.createElement("b", null, yenExact(plan.yearAnnual / 12)))), noneCats.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u4E88\u7B97\u5916"), /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, noneCats.map((c) => /* @__PURE__ */ React.createElement(
       Row,
       {
         key: c.id,
