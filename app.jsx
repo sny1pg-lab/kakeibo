@@ -43,6 +43,8 @@ const LINK_PREFIX = "lk_";
 function isLinked(x) { return String(x && x.id).indexOf(LINK_PREFIX) === 0; }
 // カテゴリの並び順。id を並べた1行として持つ。ここに無いものは後ろに回る
 const CATORDER_ROW = "set_catorder";
+// 店名の候補に並べる数。これを越えるぶんは、打って絞り込んでもらう
+const SHOP_CHIPS = 12;
 
 /** 一覧の中で1つだけ位置を入れ替える。 */
 function moveItem(list, i, delta) {
@@ -786,6 +788,35 @@ function GroupList({ defs, useCount, onSave }) {
   );
 }
 
+/**
+ * 店名の入力欄。これまでに使った店名を候補として下に並べる。
+ *
+ * 候補はその家計簿の記録から作るので、家計簿ごとに中身が違う。
+ * 打つたびに絞り込むので、欄をもう1つ増やさずに探せる。
+ * 数が多い家計簿（おうちは100種類を越える）でも、数文字打てば目当てが出る。
+ */
+function ShopField({ value, onChange, options, label }) {
+  const hits = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    const list = q ? options.filter((n) => n.toLowerCase().indexOf(q) >= 0 && n !== value.trim()) : options;
+    return list.slice(0, SHOP_CHIPS);
+  }, [value, options]);
+  return (
+    <div className="kb-field">
+      <label className="kb-label">{label}</label>
+      <input className="kb-input" value={value} onChange={(ev) => onChange(ev.target.value)} placeholder="無印良品" />
+      {hits.length > 0 && (
+        <div className="kb-chips kb-shopchips">
+          {hits.map((n) => (
+            <button key={n} className="kb-tagchip" onPointerDown={(ev) => ev.preventDefault()}
+                    onClick={() => onChange(n)}>{n}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SetupScreen({ onSave }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -1418,6 +1449,21 @@ function KakeiboApp() {
   const partyRows = useMemo(() => masterRowsOf(PARTY_GROUP), [masterRowsOf]);
 
   const methods = useMemo(() => namesOf(METHOD_GROUP), [namesOf]);
+
+  /**
+   * これまでに使った店名。よく使う順に並べる。
+   * 明細と立替の両方から集めるので、立替で入れた店も明細で選べる。
+   */
+  const shopOptions = useMemo(() => {
+    const count = {};
+    const add = (v) => {
+      const t = String(v || "").trim();
+      if (t) count[t] = (count[t] || 0) + 1;
+    };
+    entries.forEach((e) => add(e.shop));
+    settlements.forEach((s) => add(s.shop));
+    return Object.keys(count).sort((a, b) => (count[b] - count[a]) || a.localeCompare(b, "ja"));
+  }, [entries, settlements]);
 
   /* ---- この家計簿で使う機能 ---- */
 
@@ -3107,10 +3153,7 @@ function KakeiboApp() {
                 </div>
               )}
               {canShop && (
-                <div className="kb-field">
-                  <label className="kb-label">店名（任意）</label>
-                  <input className="kb-input" value={enShop} onChange={(ev) => setEnShop(ev.target.value)} placeholder="無印良品" />
-                </div>
+                <ShopField label="店名（任意）" value={enShop} onChange={setEnShop} options={shopOptions} />
               )}
               <div className="kb-field">
                 <label className="kb-label">{canShop ? "内容（任意）" : "内容（店名など・任意）"}</label>
@@ -3203,10 +3246,7 @@ function KakeiboApp() {
                 </select>
               </div>
               {tkCanShop && (
-                <div className="kb-field">
-                  <label className="kb-label">店名（任意）</label>
-                  <input className="kb-input" value={tkShop} onChange={(ev) => setTkShop(ev.target.value)} placeholder="無印良品" />
-                </div>
+                <ShopField label="店名（任意）" value={tkShop} onChange={setTkShop} options={shopOptions} />
               )}
               <div className="kb-field">
                 <label className="kb-label">内容{tkCanShop ? "（任意）" : ""}</label>
