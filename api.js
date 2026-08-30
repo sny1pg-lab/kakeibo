@@ -23,6 +23,15 @@
   var FIRST_BOOK_NAME = '個人';
   var MAX_BACKOFF_MS = 30000;
   var REQUEST_TIMEOUT_MS = 30000;
+  /**
+   * 1回に送る変更の数。
+   *
+   * まとめて何百件も送ると、Apps Script 側の処理が30秒を越えて応答が来ない。
+   * 中身は書けているのに失敗として扱われ、同じものを送り直し続けることになる。
+   * （一括で精算済みにしたときに実際に起きた）
+   * 分けて送れば1回ぶんが軽くなり、進んだところまでは確実に片付く。
+   */
+  var MAX_BATCH = 25;
 
   /* ---- localStorage は使えたら使う程度に留める ---- */
   var store = (function () {
@@ -198,7 +207,7 @@
     lastError = '';
     notify();
 
-    inFlight = queue.slice();
+    inFlight = queue.slice(0, MAX_BATCH);
     var batch = inFlight;
     var body = batch.length === 1
       ? batch[0]
