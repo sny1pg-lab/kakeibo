@@ -950,7 +950,7 @@ function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
                    onClick={() => onEdit({ target: c.id, label: c.name, kind: "note" })} />
             ))}
           </div>
-          <div className="kb-note">予算を置かないカテゴリです。使った額は分析タブで見られます。</div>
+          <div className="kb-note">予算を置かないカテゴリです。使った額は実績タブで見られます。</div>
         </>
       )}
 
@@ -2129,7 +2129,7 @@ function KakeiboApp() {
     return out;
   }, [histRows, year]);
 
-  /* ---- 分析 ---- */
+  /* ---- 実績（画面の名前。中では analysis と呼んでいる） ---- */
 
   const anaRows = useMemo(() => budgetCats.map((c) => {
     const totals = monthlyTotalsOf(c);
@@ -2297,7 +2297,7 @@ function KakeiboApp() {
     ...(KakeiboAPI.supportsTable("budgets") ? [{ key: "budget", label: "予算", icon: Target }] : []),
     { key: "record", label: "記録", icon: PencilLine },
     { key: "history", label: "履歴", icon: ListOrdered },
-    { key: "analysis", label: "分析", icon: PieChart },
+    { key: "analysis", label: "実績", icon: PieChart },
     ...(uses.settle ? [{ key: "settle", label: "立替", icon: Wallet }] : []),
   ];
 
@@ -2904,7 +2904,7 @@ function KakeiboApp() {
           <button className="kb-fab" onClick={openTkNew} aria-label="立替を記録"><Plus size={26} /></button>
         )}
 
-        {/* 分析・立替の明細シート */}
+        {/* 実績・立替の明細シート */}
         {detail && (
           <div className="kb-sheet-backdrop" onClick={closeDetail}>
             <div className="kb-sheet" ref={detailSheetRef} onClick={(ev) => ev.stopPropagation()}>

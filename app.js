@@ -637,7 +637,7 @@
         memo: plan.per[c.id] ? plan.per[c.id].memo : "",
         onClick: () => onEdit({ target: c.id, label: c.name, kind: "note" })
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u4E88\u7B97\u3092\u7F6E\u304B\u306A\u3044\u30AB\u30C6\u30B4\u30EA\u3067\u3059\u3002\u4F7F\u3063\u305F\u984D\u306F\u5206\u6790\u30BF\u30D6\u3067\u898B\u3089\u308C\u307E\u3059\u3002")), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, year, "\u5E74\u306E\u4E88\u7B97\u3067\u3059\u3002\u4E0A\u306E\u5E74\u3092\u5207\u308A\u66FF\u3048\u308B\u3068\u3001\u305D\u306E\u5E74\u306E\u4E88\u7B97\u3092\u5225\u306B\u6301\u3066\u307E\u3059\u3002 \u30AA\u30EC\u30F3\u30B8\u306E\u91D1\u984D\u306F\u8A08\u7B97\u3067\u51FA\u305F\u3082\u306E\u306A\u306E\u3067\u3001\u76F4\u63A5\u306F\u5909\u3048\u3089\u308C\u307E\u305B\u3093\u3002"));
+    ))), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, "\u4E88\u7B97\u3092\u7F6E\u304B\u306A\u3044\u30AB\u30C6\u30B4\u30EA\u3067\u3059\u3002\u4F7F\u3063\u305F\u984D\u306F\u5B9F\u7E3E\u30BF\u30D6\u3067\u898B\u3089\u308C\u307E\u3059\u3002")), /* @__PURE__ */ React.createElement("div", { className: "kb-note" }, year, "\u5E74\u306E\u4E88\u7B97\u3067\u3059\u3002\u4E0A\u306E\u5E74\u3092\u5207\u308A\u66FF\u3048\u308B\u3068\u3001\u305D\u306E\u5E74\u306E\u4E88\u7B97\u3092\u5225\u306B\u6301\u3066\u307E\u3059\u3002 \u30AA\u30EC\u30F3\u30B8\u306E\u91D1\u984D\u306F\u8A08\u7B97\u3067\u51FA\u305F\u3082\u306E\u306A\u306E\u3067\u3001\u76F4\u63A5\u306F\u5909\u3048\u3089\u308C\u307E\u305B\u3093\u3002"));
   }
   function KakeiboApp() {
     const now = /* @__PURE__ */ new Date();
@@ -1863,7 +1863,7 @@
       ...KakeiboAPI.supportsTable("budgets") ? [{ key: "budget", label: "\u4E88\u7B97", icon: Target }] : [],
       { key: "record", label: "\u8A18\u9332", icon: PencilLine },
       { key: "history", label: "\u5C65\u6B74", icon: ListOrdered },
-      { key: "analysis", label: "\u5206\u6790", icon: PieChart },
+      { key: "analysis", label: "\u5B9F\u7E3E", icon: PieChart },
       ...uses.settle ? [{ key: "settle", label: "\u7ACB\u66FF", icon: Wallet }] : []
     ];
     useEffect(() => {
