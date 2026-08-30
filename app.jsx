@@ -376,7 +376,8 @@ function entryTitle(e) {
  */
 function rowTitle(x, kind) {
   if (kind === "transfer") return x.memo || "振替";
-  if (kind === "settlement") return joinTitle([x.shop, x.memo]);
+  // 店名も内容も空なら、せめてどこの立替かは出す
+  if (kind === "settlement") return joinTitle([x.shop, x.memo]) || x.party || "";
   return entryTitle(x);
 }
 
@@ -1950,7 +1951,7 @@ function KakeiboApp() {
   function submitTk() {
     const memo = tkMemo.trim();
     const amount = amountValue(tkAmount);
-    if (!memo) { setTkError("内容を入力してください"); return; }
+    // 店名も内容も任意。店名だけ入れて済ませたいことが多いため
     if (!tkAmount || isNaN(amount) || amount <= 0) { setTkError("金額を正しく入力してください"); return; }
     if (tkEditId) {
       const base = settlements.find((s) => s.id === tkEditId);
@@ -3291,7 +3292,7 @@ function KakeiboApp() {
                 <ShopField label="店名（任意）" value={tkShop} onChange={setTkShop} options={shopOptions} />
               )}
               <div className="kb-field">
-                <label className="kb-label">内容{tkCanShop ? "（任意）" : ""}</label>
+                <label className="kb-label">{tkCanShop ? "内容（任意）" : "内容（店名など・任意）"}</label>
                 <input className="kb-input" value={tkMemo} onChange={(ev) => setTkMemo(ev.target.value)} placeholder={tkCanShop ? "歯ブラシ換え" : "無印良品"} />
               </div>
               {tkSupportsMethod && (
