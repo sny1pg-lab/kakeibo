@@ -67,7 +67,14 @@ body { background: #F2F3F5; }
 .kb-row:last-child { border-bottom-color: transparent; }
 .kb-row:active { background: #FAFAFB; }
 .kb-dot { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; }
-.kb-rowmain { flex: 1; min-width: 0; }
+/* 下段が無い行でも、行の高さは2段ぶん（20px + 2px + 16px）を確保する。
+   そのうえで中身を上下の中央に置く。空白の下段を入れて高さを保っていたころは、
+   1行だけの行が上に寄って見えていた */
+.kb-rowmain {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: 38px;
+}
 /* 行の高さは一覧ごとに揃える。行送りを書体に任せると、文字の種類や
    環境によって1〜4pxずれてしまうので、ここで決めておく */
 .kb-rowtitle { font-size: 14.5px; font-weight: 500; line-height: 20px; }
@@ -260,6 +267,9 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 .kb-iconbtn.confirm { border: 1px solid var(--pending); color: var(--pending); }
 .kb-iconbtn.confirm:active { background: #FDEED8; }
 /* 入か切かを表すボタン。オレンジは未確定の意味で使っているので、ここでは緑にする */
+/* 並べ替えの矢印。ほかのボタンより細くして、4つ並んでも収まるようにする */
+.kb-iconbtn.arrow { width: 22px; }
+.kb-iconbtn:disabled { opacity: 0.25; cursor: default; }
 .kb-iconbtn.on { border: 1px solid var(--accent); color: var(--accent); }
 .kb-iconbtn.on:active { background: #EAF6EE; }
 

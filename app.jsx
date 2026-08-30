@@ -36,6 +36,19 @@ const LEGACY_GROUPS = [
   { name: "固定費", kind: KIND_MONTH },
 ];
 const GROUP_ROW = "set_groups";
+// カテゴリの並び順。id を並べた1行として持つ。ここに無いものは後ろに回る
+const CATORDER_ROW = "set_catorder";
+
+/** 一覧の中で1つだけ位置を入れ替える。 */
+function moveItem(list, i, delta) {
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= list.length) return list;
+  const next = list.slice();
+  const t = next[i];
+  next[i] = next[j];
+  next[j] = t;
+  return next;
+}
 
 /** 設定行の tags（"光熱費:月間,生活費:年間" の形）からグループの並びを作る。 */
 function parseGroups(tags) {
@@ -83,6 +96,19 @@ const INCOME_TARGET = "income";
 
 function isMaster(c) { return MASTER_GROUPS.indexOf(c.group) >= 0; }
 
+/** 一覧の並べ替え。上下の矢印を2つ並べる。端では押せなくする。 */
+function MoveButtons({ i, count, onMove, what }) {
+  if (count <= 1) return null;
+  return (
+    <>
+      <button className="kb-iconbtn arrow" disabled={i === 0}
+              onClick={() => onMove(-1)} aria-label={`${what}を上へ`}><ChevronUp size={15} /></button>
+      <button className="kb-iconbtn arrow" disabled={i === count - 1}
+              onClick={() => onMove(1)} aria-label={`${what}を下へ`}><ChevronDown size={15} /></button>
+    </>
+  );
+}
+
 /**
  * 一覧から消した名前でも、その記録を開いたときは選べるようにしておく。
  * 選択肢に無いと、編集しただけで別のものに書き換わってしまう。
@@ -115,6 +141,7 @@ const Check = (p) => <Svg {...p}><path d="M20 6 9 17l-5-5" /></Svg>;
 const ChevronRight = (p) => <Svg {...p}><path d="m9 18 6-6-6-6" /></Svg>;
 const ChevronLeft = (p) => <Svg {...p}><path d="m15 18-6-6 6-6" /></Svg>;
 const ChevronDown = (p) => <Svg {...p}><path d="m6 9 6 6 6-6" /></Svg>;
+const ChevronUp = (p) => <Svg {...p}><path d="m18 15-6-6-6 6" /></Svg>;
 const RefreshCw = (p) => <Svg {...p}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></Svg>;
 const BookOpen = (p) => <Svg {...p}><path d="M12 7v14" /><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" /></Svg>;
 const Trash2 = (p) => <Svg {...p}><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M10 11v6" /><path d="M14 11v6" /></Svg>;
@@ -362,7 +389,7 @@ function RowMain({ x, kind = x.kind, sub, ...rest }) {
         {rowTitle(x, kind)}
         {x.formula ? <span className="kb-formula">{x.formula}</span> : null}
       </div>
-      <div className="kb-rowsub">{note || "\u00A0"}</div>
+      {note ? <div className="kb-rowsub">{note}</div> : null}
     </div>
   );
 }
@@ -652,7 +679,7 @@ function GroupList({ defs, useCount, onSave }) {
     <div style={{ marginTop: 22 }}>
       <div className="kb-section-label">グループ</div>
       <div className="kb-card" style={{ background: "#FAFAFB" }}>
-        {defs.map((g) => {
+        {defs.map((g, gi) => {
           const used = useCount(g.name);
           return (
             <div className="kb-row" key={g.name} style={{ cursor: "default" }}>
@@ -686,6 +713,8 @@ function GroupList({ defs, useCount, onSave }) {
                   </>
                 ) : (
                   <>
+                    <MoveButtons i={gi} count={defs.length} what={g.name}
+                                 onMove={(d) => { reset(); onSave(moveItem(defs, gi, d)); }} />
                     <button className="kb-iconbtn" onClick={() => { reset(); setEditing(g.name); setName(g.name); setKind(g.kind); }}
                             aria-label={`${g.name}を編集`}><Pencil size={14} /></button>
                     {defs.length > 1 && (
@@ -777,9 +806,8 @@ function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
     <button className="kb-row kb-bgrow" onClick={onClick} disabled={!onClick}>
       <div className="kb-rowmain">
         <div className="kb-rowtitle" style={strong ? { fontWeight: 700 } : undefined}>{label}</div>
-        {/* 引き落とし先は一覧に出さない（編集シートでは設定できる）。
-            メモが無い行にも同じ高さを持たせて、一覧の行を揃える */}
-        <div className="kb-rowsub">{memo || "\u00A0"}</div>
+        {/* 引き落とし先は一覧に出さない（編集シートでは設定できる） */}
+        {memo ? <div className="kb-rowsub">{memo}</div> : null}
       </div>
       <span className="kb-amount" style={derived ? { color: "var(--pending)" } : undefined}>
         {amount === null ? "\u2014" : yenExact(amount)}
@@ -1295,7 +1323,53 @@ function KakeiboApp() {
   /* ---- 立替先と支払方法（categories に相乗りしている） ---- */
 
   // 予算のカテゴリだけを取り出す。画面と集計はすべてこちらを使う
-  const budgetCats = useMemo(() => categories.filter((c) => !isMaster(c)), [categories]);
+  /**
+   * 予算のカテゴリだけを取り出し、決めた並び順にする。
+   * 並び順は設定の1行に id を並べて持つ。そこに無いものは後ろへ回す。
+   * シートの行の順に頼ると、直すたびに順番が変わってしまうため。
+   */
+  const budgetCats = useMemo(() => {
+    const list = categories.filter((c) => !isMaster(c));
+    const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === CATORDER_ROW);
+    if (!row || !row.tags.length) return list;
+    const at = {};
+    row.tags.forEach((id, i) => { at[id] = i; });
+    return list.slice().sort((a, b) => {
+      const ia = at[a.id] === undefined ? 9999 : at[a.id];
+      const ib = at[b.id] === undefined ? 9999 : at[b.id];
+      return ia === ib ? 0 : ia - ib;
+    });
+  }, [categories]);
+
+  /** カテゴリの並び順を保存する。渡された順にそのまま覚える。 */
+  function saveCatOrder(list) {
+    const row = {
+      id: CATORDER_ROW, name: "カテゴリの並び", group: FEATURE_GROUP,
+      monthlyBudget: 0, annualBudget: 0, tags: list.map((c) => c.id), note: "",
+    };
+    setCategories((p) => (p.some((c) => c.id === CATORDER_ROW)
+      ? p.map((c) => (c.id === CATORDER_ROW ? row : c))
+      : [...p, row]));
+    saveCategory(row);
+  }
+
+  /**
+   * グループの中でカテゴリを1つ動かす。
+   * 並び順は家計簿ぜんぶで1本なので、動かしたあとにグループ順で並べ直して保存する。
+   */
+  function moveCat(cat, delta) {
+    const inGroup = budgetCats.filter((c) => c.group === cat.group);
+    const i = inGroup.findIndex((c) => c.id === cat.id);
+    const moved = moveItem(inGroup, i, delta);
+    if (moved === inGroup) return;
+    const out = [];
+    groupOrder.forEach((g) => {
+      out.push(...(g === cat.group ? moved : budgetCats.filter((c) => c.group === g)));
+    });
+    // どのグループにも属さないカテゴリが残っていたら後ろに付ける
+    budgetCats.forEach((c) => { if (out.indexOf(c) < 0) out.push(c); });
+    saveCatOrder(out);
+  }
 
   const masterRowsOf = useCallback(
     (group) => categories.filter((c) => c.group === group),
@@ -2859,6 +2933,11 @@ function KakeiboApp() {
                 <label className="kb-label">日付</label>
                 <input className="kb-input" type="date" value={trDate} min={`${year}-01-01`} max={`${year}-12-31`} onChange={(ev) => setTrDate(ev.target.value)} />
               </div>
+              {methods.length === 0 && (
+                <div className="kb-note" style={{ padding: "0 0 10px" }}>
+                  支払方法がまだありません。カテゴリ編集の「支払方法」で足すと、ここで選べるようになります。
+                </div>
+              )}
               <div className="kb-inline">
                 <div className="kb-field" style={{ flex: 1 }}>
                   <label className="kb-label">振替元</label>
@@ -2995,7 +3074,7 @@ function KakeiboApp() {
                     <div key={g}>
                       <div className="kb-section-label">{g}</div>
                       <div className="kb-card" style={{ background: "#FAFAFB" }}>
-                        {budgetCats.filter((c) => c.group === g).map((c) => (
+                        {budgetCats.filter((c) => c.group === g).map((c, ci, arr) => (
                           <div className="kb-row" key={c.id} style={{ cursor: "default" }}>
                             <div className="kb-dot" style={{ background: colorOf(catIndex[c.id]) }}>{c.name.slice(0, 1)}</div>
                             <div className="kb-rowmain">
@@ -3013,6 +3092,8 @@ function KakeiboApp() {
                               </div>
                             </div>
                             <div className="kb-rowright">
+                              <MoveButtons i={ci} count={arr.length} what={c.name}
+                                           onMove={(d) => moveCat(c, d)} />
                               <button className="kb-iconbtn" onClick={() => openCatEdit(c)} aria-label="編集"><Pencil size={14} /></button>
                               {catDeleteId === c.id ? (
                                 <>
