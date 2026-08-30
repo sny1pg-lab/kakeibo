@@ -379,6 +379,8 @@
             if (api.supports('entries', 'formula')) rec.formula = e.formula || '';
             // 立て替えたぶんを精算したか。pending とは別の意味なので混同しない
             if (api.supports('entries', 'settled')) rec.settled = e.settled === true || e.settled === 'TRUE';
+            // 店名。内容（memo）と分けて持つ
+            if (api.supports('entries', 'shop')) rec.shop = e.shop || '';
             return rec;
           }),
           transfers: (d.transfers || []).map(function (t) {
@@ -407,6 +409,7 @@
             if (api.supports('settlements', 'tag')) rec.tag = s.tag || '';
             if (api.supports('settlements', 'method')) rec.method = s.method || '';
             if (api.supports('settlements', 'formula')) rec.formula = s.formula || '';
+            if (api.supports('settlements', 'shop')) rec.shop = s.shop || '';
             return rec;
           }),
           // 年ごとの予算。シートを増やす前は空で返る

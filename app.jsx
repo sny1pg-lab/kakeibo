@@ -353,14 +353,20 @@ function AmountField({ value, onChange, income, inputRef }) {
 }
 
 /**
- * 明細の見出し。「内訳 内容」を1行にまとめる。
- * 内訳が無いカテゴリは内容だけ、内容が内訳と同じなら内訳だけになる。
+ * 明細の見出し。「内訳 店名 内容」を1行にまとめる。
+ * 同じ言葉が続くときと、空のものは飛ばす。
+ * 全部空ならカテゴリ名を出す。
  */
+function joinTitle(parts) {
+  const out = [];
+  parts.forEach((v) => {
+    const t = String(v || "").trim();
+    if (t && out.indexOf(t) < 0) out.push(t);
+  });
+  return out.join(" ");
+}
 function entryTitle(e) {
-  const parts = [];
-  if (e.tag) parts.push(e.tag);
-  if (e.memo && e.memo !== e.tag) parts.push(e.memo);
-  return parts.join(" ") || e.catName || "";
+  return joinTitle([e.tag, e.shop, e.memo]) || e.catName || "";
 }
 
 /**
@@ -368,7 +374,7 @@ function entryTitle(e) {
  */
 function rowTitle(x, kind) {
   if (kind === "transfer") return x.memo || "振替";
-  if (kind === "settlement") return x.memo || "";
+  if (kind === "settlement") return joinTitle([x.shop, x.memo]);
   return entryTitle(x);
 }
 
@@ -1020,6 +1026,7 @@ function KakeiboApp() {
   const [enType, setEnType] = useState("expense");
   const [enPending, setEnPending] = useState(true);
   const [enSettled, setEnSettled] = useState(false);   // 立て替えたぶんを精算したか
+  const [enShop, setEnShop] = useState("");            // 店名。内容とは別に持つ
   const [settleTag, setSettleTag] = useState(null);    // 未精算の一覧の絞り込み（内訳）
   const [settleConfirm, setSettleConfirm] = useState(false);
   const [enError, setEnError] = useState("");
@@ -1041,6 +1048,7 @@ function KakeiboApp() {
   const [tkEditId, setTkEditId] = useState(null);
   const [tkDate, setTkDate] = useState("");
   const [tkMemo, setTkMemo] = useState("");
+  const [tkShop, setTkShop] = useState("");   // 店名。内容とは別に持つ
   const [tkParty, setTkParty] = useState("");
   const [tkAmount, setTkAmount] = useState("");
   const [tkPending, setTkPending] = useState(true);
@@ -1419,6 +1427,9 @@ function KakeiboApp() {
    */
   // 明細の精算は列を1つ増やしている。貼り替えていないうちは出さない
   const canSettleEntry = KakeiboAPI.supports("entries", "settled");
+  // 店名も同じ。貼り替え前は欄を出さない。入れても保存されずに消えるため
+  const canShop = KakeiboAPI.supports("entries", "shop");
+  const tkCanShop = KakeiboAPI.supports("settlements", "shop");
 
   const uses = useMemo(() => {
     const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === FEATURE_ROW);
@@ -1605,7 +1616,7 @@ function KakeiboApp() {
     setEntryTarget({ catId: cat.id, entryId: null });
     setEnDate((d) => (d && yearOf(d) === year ? d : todayInYear()));
     setEnTag(cat.tags[0] || "");
-    setEnMemo("");
+    setEnMemo(""); setEnShop("");
     setEnAmount("");
     setEnType("expense");
     if (!uses.method) setEnMethod("");
@@ -1620,7 +1631,7 @@ function KakeiboApp() {
     setEntryTarget({ catId: cat.id, entryId: entry.id });
     setEnDate(entry.date || `${year}-01-01`);
     setEnTag(entry.tag || cat.tags[0] || "");
-    setEnMemo(entry.memo || "");
+    setEnMemo(entry.memo || ""); setEnShop(entry.shop || "");
     setEnMethod(entry.method || methods[0]);
     // 式で入れた記録は式のまま出す。金額を手で打ち直せば式は消える
     setEnAmount(entry.formula || String(Math.abs(Number(entry.amount) || 0)));
@@ -1658,6 +1669,7 @@ function KakeiboApp() {
       };
       if (KakeiboAPI.supports("entries", "formula")) updated.formula = enteredFormula(enAmount);
       if (canSettleEntry) updated.settled = enSettled;
+      if (canShop) updated.shop = enShop.trim();
       setEntries((prev) => prev.map((e) => (e.id === entryId ? updated : e)));
       saveEntry(updated);
       closeEntry();
@@ -1671,6 +1683,7 @@ function KakeiboApp() {
     };
     if (KakeiboAPI.supports("entries", "formula")) created.formula = enteredFormula(enAmount);
     if (canSettleEntry) created.settled = enSettled;
+    if (canShop) created.shop = enShop.trim();
     setEntries((prev) => [...prev, created]);
     saveEntry(created);
     // 1件入れて閉じる使い方が多いので、記録したらシートを閉じる。
@@ -1853,13 +1866,13 @@ function KakeiboApp() {
   /* ---- 立替 ---- */
 
   function openTkNew() {
-    setTkEditId(null); setTkDate(todayInYear()); setTkMemo(""); setTkParty(parties[0]); setTkAmount("");
+    setTkEditId(null); setTkDate(todayInYear()); setTkMemo(""); setTkShop(""); setTkParty(parties[0]); setTkAmount("");
     setTkConfirmDel(false); setTkMethod(methods[0]);
     setTkPending(true); setTkError("");
     setTkFormOpen(true);
   }
   function openTkEdit(t) {
-    setTkEditId(t.id); setTkDate(t.date || ""); setTkMemo(t.memo || "");
+    setTkEditId(t.id); setTkDate(t.date || ""); setTkMemo(t.memo || ""); setTkShop(t.shop || "");
     setTkParty(t.party || parties[0]);
     setTkConfirmDel(false); setTkMethod(t.method || methods[0]);
     // 式で入れた記録は式のまま出す。金額を手で打ち直せば式は消える
@@ -1875,6 +1888,7 @@ function KakeiboApp() {
     const out = {};
     if (tkSupportsMethod) out.method = tkMethod;
     if (KakeiboAPI.supports("settlements", "formula")) out.formula = enteredFormula(tkAmount);
+    if (tkCanShop) out.shop = tkShop.trim();
     return out;
   }
 
@@ -3092,9 +3106,15 @@ function KakeiboApp() {
                   </select>
                 </div>
               )}
+              {canShop && (
+                <div className="kb-field">
+                  <label className="kb-label">店名（任意）</label>
+                  <input className="kb-input" value={enShop} onChange={(ev) => setEnShop(ev.target.value)} placeholder="無印良品" />
+                </div>
+              )}
               <div className="kb-field">
-                <label className="kb-label">内容（店名など・任意）</label>
-                <input className="kb-input" value={enMemo} onChange={(ev) => setEnMemo(ev.target.value)} placeholder="無印良品" />
+                <label className="kb-label">{canShop ? "内容（任意）" : "内容（店名など・任意）"}</label>
+                <input className="kb-input" value={enMemo} onChange={(ev) => setEnMemo(ev.target.value)} placeholder={canShop ? "歯ブラシ換え" : "無印良品"} />
               </div>
               {uses.method && (
                 <div className="kb-field">
@@ -3182,9 +3202,15 @@ function KakeiboApp() {
                     ? <option value={tkParty}>{tkParty}</option> : null}
                 </select>
               </div>
+              {tkCanShop && (
+                <div className="kb-field">
+                  <label className="kb-label">店名（任意）</label>
+                  <input className="kb-input" value={tkShop} onChange={(ev) => setTkShop(ev.target.value)} placeholder="無印良品" />
+                </div>
+              )}
               <div className="kb-field">
-                <label className="kb-label">内容</label>
-                <input className="kb-input" value={tkMemo} onChange={(ev) => setTkMemo(ev.target.value)} placeholder="無印良品" />
+                <label className="kb-label">内容{tkCanShop ? "（任意）" : ""}</label>
+                <input className="kb-input" value={tkMemo} onChange={(ev) => setTkMemo(ev.target.value)} placeholder={tkCanShop ? "歯ブラシ換え" : "無印良品"} />
               </div>
               {tkSupportsMethod && (
                 <div className="kb-field">
