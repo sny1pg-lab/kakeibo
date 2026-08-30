@@ -368,6 +368,8 @@
             };
             // 後から足した列。Apps Script が扱えるときだけ持たせる
             if (api.supports('entries', 'formula')) rec.formula = e.formula || '';
+            // 立て替えたぶんを精算したか。pending とは別の意味なので混同しない
+            if (api.supports('entries', 'settled')) rec.settled = e.settled === true || e.settled === 'TRUE';
             return rec;
           }),
           transfers: (d.transfers || []).map(function (t) {

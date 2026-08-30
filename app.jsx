@@ -27,7 +27,8 @@ const KIND_YEAR = "年間";    // 年額をマスターにする
 const KIND_REST = "残り";    // 収入から他を引いた残り。金額は持たない
 const KIND_NONE = "なし";    // 予算を置かない
 const KINDS = [KIND_MONTH, KIND_YEAR, KIND_NONE, KIND_REST];
-const KIND_LABEL = { [KIND_MONTH]: "月間予算", [KIND_YEAR]: "年間予算", [KIND_NONE]: "予算外", [KIND_REST]: "残り" };
+// 画面に出す言い方。保存する値（KIND_REST など）は変えない
+const KIND_LABEL = { [KIND_MONTH]: "月間予算", [KIND_YEAR]: "年間予算", [KIND_NONE]: "予算外", [KIND_REST]: "収入の残り" };
 
 // 設定が無いときの並びと持ち方。ゆきの家計簿はこれで動いている
 const LEGACY_GROUPS = [
@@ -75,9 +76,13 @@ const METHOD_GROUP = "支払方法";
 // 片方で消した機能が、もう片方の端末では出たままにならないようにしている。
 const FEATURE_GROUP = "設定";
 const FEATURE_ROW = "set_features";
-// 補足は1行に収まる長さにする。一覧の下段は伸びずに省略されるため
+// 補足は1行に収まる長さにする。一覧の下段は伸びずに省略されるため。
+// defaultOff は、設定していない家計簿では使わないもの。あとから足した機能に使う。
+// 設定の行は「使わないもの」を並べるので、この印が付いたものだけ "+" を頭に付けて
+// 「使う」ほうを覚える。付けないと、既存の家計簿でも勝手に出てしまう
 const FEATURES = [
   { key: "pending", label: "金額の確定", hint: "あとからチェックで確定にします" },
+  { key: "esettle", label: "明細の精算", hint: "立て替えたぶんに精算済みの印を付けます", defaultOff: true },
   { key: "settle", label: "立替", hint: "立て替えたぶんを区分ごとに集めます" },
   { key: "transfer", label: "振替", hint: "チャージなど。支出には数えません" },
   { key: "method", label: "支払い方法", hint: "記録に引き落とし先を残します" },
@@ -730,7 +735,8 @@ function GroupList({ defs, useCount, onSave }) {
       </div>
       <div className="kb-note">
         並んでいる順に画面へ出ます。月間予算は月額、年間予算は年額で持ちます。
-        予算外は金額を置きません。残りは、収入から他をすべて引いた額が入ります。
+        予算外は金額を置きません。収入の残りは、収入から月間予算と年間予算をすべて引いた額が
+        自動で入るもので、金額は自分では変えられません。
       </div>
       {error && <div className="kb-err">{error}</div>}
       {adding ? (
@@ -994,6 +1000,9 @@ function KakeiboApp() {
   const [enAmount, setEnAmount] = useState("");
   const [enType, setEnType] = useState("expense");
   const [enPending, setEnPending] = useState(true);
+  const [enSettled, setEnSettled] = useState(false);   // 立て替えたぶんを精算したか
+  const [settleTag, setSettleTag] = useState(null);    // 未精算の一覧の絞り込み（内訳）
+  const [settleConfirm, setSettleConfirm] = useState(false);
   const [enError, setEnError] = useState("");
   const [enConfirmDel, setEnConfirmDel] = useState(false);
 
@@ -1387,16 +1396,24 @@ function KakeiboApp() {
    * 使わない機能は categories の1行に相乗りさせて持つ。
    * 行が無ければ全部使う。おうちのように立替も振替も使わない家計簿があるため。
    */
+  // 明細の精算は列を1つ増やしている。貼り替えていないうちは出さない
+  const canSettleEntry = KakeiboAPI.supports("entries", "settled");
+
   const uses = useMemo(() => {
     const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === FEATURE_ROW);
-    const off = row ? row.tags : [];
+    const saved = row ? row.tags : [];
     const out = {};
-    FEATURES.forEach((f) => { out[f.key] = off.indexOf(f.key) < 0; });
+    FEATURES.forEach((f) => {
+      out[f.key] = f.defaultOff ? saved.indexOf("+" + f.key) >= 0 : saved.indexOf(f.key) < 0;
+    });
     return out;
   }, [categories]);
 
   function toggleUse(key, on) {
-    const off = FEATURES.map((f) => f.key).filter((k) => (k === key ? !on : !uses[k]));
+    const state = (f) => (f.key === key ? on : uses[f.key]);
+    const off = FEATURES
+      .filter((f) => (f.defaultOff ? state(f) : !state(f)))
+      .map((f) => (f.defaultOff ? "+" + f.key : f.key));
     const row = {
       id: FEATURE_ROW, name: "使わない機能", group: FEATURE_GROUP,
       monthlyBudget: 0, annualBudget: 0, tags: off, note: "",
@@ -1573,6 +1590,7 @@ function KakeiboApp() {
     if (!uses.method) setEnMethod("");
     // 入力した時点では金額は未確定。確定の管理を使わない家計簿では最初から確定にする
     setEnPending(uses.pending);
+    setEnSettled(false);   // 入れた時点では未精算
     setEnError("");
     setEnConfirmDel(false);
   }
@@ -1587,6 +1605,7 @@ function KakeiboApp() {
     setEnAmount(entry.formula || String(Math.abs(Number(entry.amount) || 0)));
     setEnType(isIncome(entry) ? "income" : "expense");
     setEnPending(!!entry.pending);
+    setEnSettled(!!entry.settled);
     setEnError("");
     setEnConfirmDel(false);
   }
@@ -1617,6 +1636,7 @@ function KakeiboApp() {
         type: enType, tag: enTag, memo: enMemo.trim(), method: enMethod, pending: enPending,
       };
       if (KakeiboAPI.supports("entries", "formula")) updated.formula = enteredFormula(enAmount);
+      if (canSettleEntry) updated.settled = enSettled;
       setEntries((prev) => prev.map((e) => (e.id === entryId ? updated : e)));
       saveEntry(updated);
       closeEntry();
@@ -1629,6 +1649,7 @@ function KakeiboApp() {
       type: enType, tag: enTag, memo: enMemo.trim(), method: enMethod, pending: enPending,
     };
     if (KakeiboAPI.supports("entries", "formula")) created.formula = enteredFormula(enAmount);
+    if (canSettleEntry) created.settled = enSettled;
     setEntries((prev) => [...prev, created]);
     saveEntry(created);
     // 1件入れて閉じる使い方が多いので、記録したらシートを閉じる。
@@ -1975,6 +1996,67 @@ function KakeiboApp() {
     flash(`${yen(row.amount)} を確定しました`);
   }
 
+  /* ---- 明細の精算 ---- */
+
+  /** まだ精算していない明細。立て替えた人（内訳）で絞り込めるようにする。 */
+  const unsettledRows = useMemo(() => {
+    if (!canSettleEntry) return [];
+    const rows = yearEntries
+      .filter((e) => !e.settled && !isIncome(e))
+      .map((e) => {
+        const c = budgetCats.find((x) => x.id === e.categoryId);
+        return {
+          ...e, kind: "expense", catId: e.categoryId,
+          catName: c ? c.name : "（カテゴリなし）",
+          color: colorOf(catIndex[e.categoryId]),
+        };
+      });
+    rows.sort((a, b) => {
+      const d = a.date === b.date
+        ? String(a.id).localeCompare(String(b.id))
+        : a.date.localeCompare(b.date);
+      return sortAsc ? d : -d;
+    });
+    return rows;
+  }, [canSettleEntry, yearEntries, budgetCats, catIndex, sortAsc]);
+
+  // 絞り込みに出す内訳。もと・ゆきのように立て替えた人を選ぶために使う
+  const unsettledTags = useMemo(() => {
+    const seen = [];
+    unsettledRows.forEach((r) => { if (r.tag && seen.indexOf(r.tag) < 0) seen.push(r.tag); });
+    return seen;
+  }, [unsettledRows]);
+
+  // 絞っていた内訳が片付くと選択肢から消える。そのままだと一覧が空のままになるので、
+  // いま出せる内訳に無い絞り込みは効かせない
+  const settleTagNow = settleTag && unsettledTags.indexOf(settleTag) >= 0 ? settleTag : null;
+  const shownUnsettled = useMemo(
+    () => (settleTagNow ? unsettledRows.filter((r) => r.tag === settleTagNow) : unsettledRows),
+    [unsettledRows, settleTagNow]
+  );
+
+  /** 精算済みの印を付け外しする。 */
+  function markSettled(row, settled) {
+    const base = entries.find((e) => e.id === row.id);
+    if (!base) return;
+    const updated = { ...base, settled };
+    setEntries((p) => p.map((e) => (e.id === row.id ? updated : e)));
+    saveEntry(updated);
+  }
+
+  /** いま見えているぶんをまとめて精算済みにする。 */
+  function settleShown() {
+    const list = shownUnsettled;
+    if (!list.length) return;
+    const ids = {};
+    list.forEach((r) => { ids[r.id] = true; });
+    const updated = entries.filter((e) => ids[e.id]).map((e) => ({ ...e, settled: true }));
+    setEntries((p) => p.map((e) => (ids[e.id] ? { ...e, settled: true } : e)));
+    updated.forEach(saveEntry);
+    setSettleConfirm(false);
+    flash(`${updated.length}件を精算済みにしました`);
+  }
+
   const matchesHistCat = useCallback((row) => {
     if (histCat === null) return true;
     if (histCat === "transfer") return row.kind === "transfer";
@@ -2003,7 +2085,7 @@ function KakeiboApp() {
     const m = { transfer: 0 };
     monthlyGroups.forEach((g) => { m[HIST_GROUP + g.name] = 0; });
     allRows.forEach((r) => {
-      if (histMonth !== null && histMonth !== "pending" && monthIdxOf(r.date) !== histMonth) return;
+      if (typeof histMonth === "number" && monthIdxOf(r.date) !== histMonth) return;
       if (r.kind === "transfer") { m.transfer += 1; return; }
       m[r.catId] = (m[r.catId] || 0) + 1;
       if (groupedCatIds[r.catId]) m[HIST_GROUP + groupedCatIds[r.catId]] += 1;
@@ -2012,7 +2094,7 @@ function KakeiboApp() {
   }, [allRows, histMonth, groupedCatIds, monthlyGroups]);
 
   const histRows = allRows
-    .filter((e) => histMonth === null || histMonth === "pending" || monthIdxOf(e.date) === histMonth)
+    .filter((e) => typeof histMonth !== "number" || monthIdxOf(e.date) === histMonth)
     .filter(matchesHistCat);
   const histTotal = histRows.filter((e) => e.kind !== "transfer").reduce((a, e) => a + signedAmount(e), 0);
   const historyByDate = useMemo(() => {
@@ -2343,7 +2425,7 @@ function KakeiboApp() {
                 ))}
               </div>
 
-              {histMonth !== "pending" && (
+              {histMonth !== "pending" && histMonth !== "unsettled" && (
                 <div className="kb-chips" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button className={`kb-tagchip ${histCat === null ? "on" : ""}`} onClick={() => setHistCat(null)}>すべて</button>
                   {budgetCats.filter((c) => !groupedCatIds[c.id]).map((c) => {
@@ -2392,7 +2474,89 @@ function KakeiboApp() {
                 <ChevronRight size={16} className="kb-chev" />
               </button>
               )}
-              {histMonth === "pending" ? (
+              {uses.esettle && canSettleEntry && (
+                <button
+                  className={`kb-pendingchip settle ${histMonth === "unsettled" ? "on" : ""} ${unsettledRows.length === 0 ? "empty" : ""}`}
+                  onClick={() => { setHistMonth(histMonth === "unsettled" ? null : "unsettled"); setSettleConfirm(false); }}
+                >
+                  <Wallet size={15} />
+                  <span>精算していない</span>
+                  <b>{unsettledRows.length}件</b>
+                  <ChevronRight size={16} className="kb-chev" />
+                </button>
+              )}
+              {histMonth === "unsettled" ? (
+                <>
+                  {unsettledTags.length > 1 && (
+                    <div className="kb-chips" style={{ marginTop: 8, marginBottom: 0 }}>
+                      <button className={`kb-tagchip ${settleTagNow === null ? "on" : ""}`} onClick={() => { setSettleTag(null); setSettleConfirm(false); }}>すべて</button>
+                      {unsettledTags.map((t) => (
+                        <button key={t} className={`kb-tagchip ${settleTagNow === t ? "on" : ""}`}
+                                onClick={() => { setSettleTag(settleTagNow === t ? null : t); setSettleConfirm(false); }}>
+                          {t} {unsettledRows.filter((r) => r.tag === t).length}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="kb-detail-total" style={{ paddingTop: 8 }}>
+                    <span>未精算 {yen(shownUnsettled.reduce((a, r) => a + r.amount, 0))}</span>
+                    <div className="kb-sortwrap">
+                      <span className="kb-detail-count">{shownUnsettled.length}件</span>
+                      <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+                    </div>
+                  </div>
+                  {shownUnsettled.length === 0 ? (
+                    <div className="kb-card">
+                      <div className="kb-empty">
+                        <strong>精算していない記録はありません</strong>
+                        立て替えたぶんはここに集まります。
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* まとめて印を付ける。数が多いので、押し間違いを防ぐため2段階にする */}
+                      <div className="kb-btn-row" style={{ marginBottom: 10 }}>
+                        {settleConfirm ? (
+                          <>
+                            <button className="kb-btn ghost" onClick={() => setSettleConfirm(false)}>やめる</button>
+                            <button className="kb-btn" onClick={settleShown}>
+                              {shownUnsettled.length}件を精算済みにする
+                            </button>
+                          </>
+                        ) : (
+                          <button className="kb-btn ghost" onClick={() => setSettleConfirm(true)}>
+                            <Check size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+                            この一覧の{shownUnsettled.length}件をまとめて精算済みにする
+                          </button>
+                        )}
+                      </div>
+                      <div className="kb-card">
+                        {shownUnsettled.map((r) => (
+                          <div className="kb-row" key={r.id} style={{ cursor: "default" }}>
+                            <span className="kb-detail-date">
+                              {Number(r.date.slice(5, 7))}/{Number(r.date.slice(8, 10))}
+                            </span>
+                            <RowMain
+                              x={r}
+                              style={{ cursor: "pointer" }}
+                              onClick={() => openEntryEdit(catById(r.catId), r)}
+                              sub={[r.catName, r.method].filter(Boolean).join("・")}
+                            />
+                            <span className="kb-amount" style={amountStyle(r)}>{yen(r.amount)}</span>
+                            <button className="kb-iconbtn confirm" onClick={() => markSettled(r, true)} aria-label="精算済みにする">
+                              <Check size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="kb-rowsub" style={{ padding: "10px 4px 0", whiteSpace: "normal" }}>
+                        精算したものからチェックを押してください。押すとこの一覧から消えます。
+                        内訳で絞ってからまとめて押すと、立て替えた人ごとに片付けられます。
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : histMonth === "pending" ? (
                 <>
                   <div className="kb-detail-total" style={{ paddingTop: 8 }}>
                     <span>未確定 {yen(pendingRows.reduce((a, r) => a + r.amount, 0))}</span>
@@ -2833,6 +2997,11 @@ function KakeiboApp() {
                   確定
                 </CheckRow>
               )}
+              {uses.esettle && canSettleEntry && (
+                <CheckRow checked={enSettled} onChange={setEnSettled}>
+                  精算済み
+                </CheckRow>
+              )}
               {enError && <div className="kb-err">{enError}</div>}
               <button className="kb-btn" onClick={submitEntry}>
                 {entryTarget.entryId ? "保存する" : "記録する"}
@@ -3151,7 +3320,7 @@ function KakeiboApp() {
                       使わない家計簿では、画面から丸ごと消しておく */}
                   <div className="kb-section-label" style={{ marginTop: 22 }}>この家計簿で使うもの</div>
                   <div className="kb-card" style={{ background: "#FAFAFB" }}>
-                    {FEATURES.map((f) => (
+                    {FEATURES.filter((f) => f.key !== "esettle" || canSettleEntry).map((f) => (
                       <div className="kb-row" key={f.key} style={{ cursor: "default" }}>
                         <div className="kb-rowmain">
                           <div className="kb-rowtitle">{f.label}</div>
