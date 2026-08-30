@@ -2205,6 +2205,14 @@ function KakeiboApp() {
 
   const anaTotal = anaRows.reduce((a, r) => ({ spent: a.spent + r.spent, budget: a.budget + r.budget }), { spent: 0, budget: 0 });
 
+  /**
+   * 月平均を出すときに割る月数。
+   * 終わった年は12で割る。いまの年は経過したぶんだけで割らないと、
+   * まだ使っていない月に薄まって実感より小さく出る。
+   */
+  const anaMonths = year < realYear ? 12 : year > realYear ? 12 : realMonthIdx + 1;
+  const perMonth = useCallback((v) => Math.round(v / anaMonths), [anaMonths]);
+
   const anaGroups = groupOrder.map((g) => {
     const rows = anaRows.filter((r) => r.cat.group === g);
     return {
@@ -2816,6 +2824,9 @@ function KakeiboApp() {
                   <span className="kb-total-big" style={{ color: anaTotal.spent > anaTotal.budget ? "var(--red)" : "var(--ink)" }}>
                     {yen(anaTotal.spent)}
                   </span>
+                  {anaScope === "year" && (
+                    <span className="kb-total-label">月平均 {yen(perMonth(anaTotal.spent))}</span>
+                  )}
                 </div>
                 <div className="kb-bar">
                   <span style={{
@@ -2855,6 +2866,10 @@ function KakeiboApp() {
                                 <div className="kb-bar thin">
                                   <span style={{ width: `${pct}%`, background: over ? "var(--red)" : color }} />
                                 </div>
+                              )}
+                              {/* 月平均。年間の予算と月の実感を結びつけるために出す */}
+                              {anaScope === "year" && (
+                                <div className="kb-rowsub">月平均 {yen(perMonth(spent))}</div>
                               )}
 
                             </div>
