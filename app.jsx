@@ -2229,6 +2229,18 @@ function KakeiboApp() {
       count: items.length,
     };
   }), [partyNames, scopedSettlements]);
+  /**
+   * 連動でおうちへ写る立替先か。
+   *
+   * この先については申請という段階が無い。入れた時点でおうちへ届くため。
+   * 実際にお金を動かす精算は、おうち側の「精算していない」で管理する。
+   * ここで申請の印まで出すと、2つの意味が同じ画面に混ざって分からなくなる。
+   */
+  const linkedParty = useCallback(
+    (name) => partyRows.some((r) => isLinked(r) && r.name === name),
+    [partyRows]
+  );
+
   const summaryOf = useCallback(
     (name) => partySummary.find((p) => p.party === name) || { party: name, items: [], unsettled: 0, settled: 0, count: 0 },
     [partySummary]
@@ -2830,7 +2842,8 @@ function KakeiboApp() {
               ) : (
                 <>
                   <div className="kb-section-label">
-                    {tkMonth === null ? "区分ごとの未申請" : `${MONTH_LABELS[tkMonth]}の区分ごとの未申請`}
+                    {/* 連動する先には申請という段階が無いので、見出しは中立な言い方にする */}
+                    {tkMonth === null ? "区分ごと" : `${MONTH_LABELS[tkMonth]}の区分ごと`}
                   </div>
                   {/* 枠ごとに見出しを挟む。連動でできた立替先は、
                       連動先のグループの見出しの下に、その並びのまま出る。
@@ -2852,17 +2865,24 @@ function KakeiboApp() {
                         <div className="kb-rowmain">
                           <div className="kb-partytop">
                             <span className="kb-rowtitle">{p.party}</span>
-                            <span className="kb-partyamt" style={{ color: p.unsettled > 0 ? "var(--red)" : "var(--sub)" }}>
-                              {yen(p.unsettled)}
+                            <span className="kb-partyamt" style={{
+                              color: linkedParty(p.party)
+                                ? (p.count > 0 ? "var(--ink)" : "var(--sub)")
+                                : (p.unsettled > 0 ? "var(--red)" : "var(--sub)"),
+                            }}>
+                              {yen(linkedParty(p.party) ? p.unsettled + p.settled : p.unsettled)}
                             </span>
                           </div>
                           <div className="kb-stackbar">
                             <span className="all" style={{ width: `${((p.unsettled + p.settled) / maxParty) * 100}%` }} />
-                            <span className="un" style={{ width: `${(p.unsettled / maxParty) * 100}%` }} />
+                            {!linkedParty(p.party) && (
+                              <span className="un" style={{ width: `${(p.unsettled / maxParty) * 100}%` }} />
+                            )}
                           </div>
                           <div className="kb-rowsub">
-                            {p.items.filter((t) => !t.settled).length}件未申請
-                            {p.settled > 0 ? `・申請済み ${yen(p.settled)}` : ""}
+                            {linkedParty(p.party)
+                              ? `${p.count}件・おうちへ連動`
+                              : `${p.items.filter((t) => !t.settled).length}件未申請${p.settled > 0 ? `・申請済み ${yen(p.settled)}` : ""}`}
                           </div>
                         </div>
                         <ChevronRight size={17} className="kb-chev" />
@@ -2905,30 +2925,50 @@ function KakeiboApp() {
               {detail.type === "party" ? (
                 <>
                   <div className="kb-detail-total">
-                    <span>未申請 {yen(dPartyItems.filter((t) => !t.settled).reduce((a, t) => a + t.amount, 0))}</span>
+                    <span>
+                      {linkedParty(detail.key)
+                        ? `合計 ${yen(dPartyItems.reduce((a, t) => a + t.amount, 0))}`
+                        : `未申請 ${yen(dPartyItems.filter((t) => !t.settled).reduce((a, t) => a + t.amount, 0))}`}
+                    </span>
                     <div className="kb-sortwrap">
                       <span className="kb-detail-count">{dPartyItems.length}件</span>
                       <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
                     </div>
                   </div>
                   <div className="kb-card" style={{ background: "#FAFAFB" }}>
-                    {dPartyItems.map((t) => (
-                      <div className={`kb-row ${t.settled ? "kb-settled" : ""}`} key={t.id} style={{ cursor: "default" }}>
+                    {dPartyItems.map((t) => {
+                      const linked = linkedParty(t.party);
+                      return (
+                      <div className={`kb-row ${!linked && t.settled ? "kb-settled" : ""}`} key={t.id} style={{ cursor: "default" }}>
                         <span className="kb-detail-date">
                           {t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}` : "—"}
                         </span>
                         <RowMain x={t} kind="settlement" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }} />
-                        <span className="kb-amount" style={{ color: t.pending ? "var(--pending)" : t.settled ? "var(--sub)" : "var(--red)" }}>{yen(t.amount)}</span>
-                        <button
-                          className="kb-iconbtn"
-                          onClick={() => toggleSettled(t)}
-                          aria-label={t.settled ? "未申請に戻す" : "申請済みにする"}
-                        >
-                          {t.settled ? <Undo2 size={15} /> : <Check size={16} />}
-                        </button>
+                        <span className="kb-amount" style={{
+                          color: t.pending ? "var(--pending)"
+                            : linked ? undefined
+                            : t.settled ? "var(--sub)" : "var(--red)",
+                        }}>{yen(t.amount)}</span>
+                        {linked ? (
+                          <span style={{ width: 30 }} />
+                        ) : (
+                          <button
+                            className="kb-iconbtn"
+                            onClick={() => toggleSettled(t)}
+                            aria-label={t.settled ? "未申請に戻す" : "申請済みにする"}
+                          >
+                            {t.settled ? <Undo2 size={15} /> : <Check size={16} />}
+                          </button>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
+                  {linkedParty(detail.key) && (
+                    <div className="kb-note">
+                      おうちの家計簿に連動しています。実際にお金を受け取る精算は、おうちの履歴にある「精算していない」で管理します。
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
