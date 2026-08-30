@@ -472,19 +472,37 @@
 
     pendingCount: function () { return queue.length; },
 
-    /** 未送信の控え（localStorageが使えた場合のみ中身がある）。 */
+    /**
+     * 未送信の控えを積み直す（localStorageが使えた場合のみ中身がある）。
+     *
+     * 読み込みのたびに呼ばれるので、同じ id のものは1つに畳む。
+     * 畳まないと、送り終わらないうちに読み直すたびにキューが増えていく。
+     * 484件が1449件まで膨らんだのを直したのがこれ。
+     * いま持っているほうが新しいので、控え側は捨てる。
+     */
     recoverQueue: function () {
       if (!bookId) return 0;
       var raw = storeGet(bookKey(QUEUE_KEY, bookId));
       if (!raw) return 0;
       try {
         var saved = JSON.parse(raw);
-        if (Array.isArray(saved) && saved.length) {
-          queue = saved.concat(queue);
-          notify();
-          flush();
-          return saved.length;
-        }
+        if (!Array.isArray(saved) || !saved.length) return 0;
+        var seen = {};
+        queue.forEach(function (q) { seen[q.table + ' ' + q.record.id] = true; });
+        var add = [];
+        saved.forEach(function (q) {
+          if (!q || !q.record || !q.record.id) return;
+          var k = q.table + ' ' + q.record.id;
+          if (seen[k]) return;
+          seen[k] = true;
+          add.push(q);
+        });
+        if (!add.length) return 0;
+        queue = add.concat(queue);
+        persistQueue();
+        notify();
+        flush();
+        return add.length;
       } catch (e) { /* 壊れていたら捨てる */ }
       return 0;
     },
