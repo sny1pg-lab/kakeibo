@@ -2205,14 +2205,23 @@ function KakeiboApp() {
     const spent = anaScope === "year" ? totals.reduce((s, v) => s + v, 0) : totals[anaMonth];
     const b = budgetOf(c);
     const budget = anaScope === "year" ? b.annual : b.monthly;
-    return { cat: c, spent, budget, color: colorOf(catIndex[c.id]) };
+    // 予算外のグループは、そもそも予算を置かないカテゴリ。
+    // 残や超過を出しても意味が無いので、印を付けて外しておく
+    return { cat: c, spent, budget, color: colorOf(catIndex[c.id]), noBudget: kindOf(c.group) === KIND_NONE };
   }).sort((a, b) => {
     const ga = groupOrder.indexOf(a.cat.group), gb = groupOrder.indexOf(b.cat.group);
     if (ga !== gb) return ga - gb;
     return catIndex[a.cat.id] - catIndex[b.cat.id];
   }), [budgetCats, monthlyTotalsOf, anaScope, anaMonth, catIndex]);
 
-  const anaTotal = anaRows.reduce((a, r) => ({ spent: a.spent + r.spent, budget: a.budget + r.budget }), { spent: 0, budget: 0 });
+  /**
+   * 合計。予算外のカテゴリは予算と突き合わせないので、超過の計算から外す。
+   * 混ぜると、予算を守れているかが分からなくなる。
+   * 使った額そのものは別に「予算外」として見せる。
+   */
+  const anaTotal = anaRows.filter((r) => !r.noBudget)
+    .reduce((a, r) => ({ spent: a.spent + r.spent, budget: a.budget + r.budget }), { spent: 0, budget: 0 });
+  const anaOutside = anaRows.filter((r) => r.noBudget).reduce((a, r) => a + r.spent, 0);
 
   /**
    * 月平均を出すときに割る月数。
@@ -2843,6 +2852,13 @@ function KakeiboApp() {
                     background: anaTotal.spent > anaTotal.budget ? "var(--red)" : "var(--accent)",
                   }} />
                 </div>
+                {/* 予算外は予算と突き合わせないので、合計とは別に添える */}
+                {anaOutside > 0 && (
+                  <div className="kb-total-row" style={{ marginTop: 8 }}>
+                    <span className="kb-total-label">予算外 {yen(anaOutside)}</span>
+                    <span className="kb-total-label">あわせて {yen(anaTotal.spent + anaOutside)}</span>
+                  </div>
+                )}
               </div>
 
               {anaRows.length === 0 ? (
@@ -2858,7 +2874,9 @@ function KakeiboApp() {
                       {anaRows.filter((r) => r.cat.group === group).map(({ cat, spent, budget, color }) => {
                         // 月別のとき、自由費以外は月の予算が実感と合わないので
                         // 残と超過は出さず、使った額だけを見せる
-                        const showBudget = anaScope === "year" || kindOf(cat.group) === KIND_REST;
+                        // 予算外のカテゴリは、使った額だけを出す
+                        const showBudget = (anaScope === "year" || kindOf(cat.group) === KIND_REST)
+                          && kindOf(cat.group) !== KIND_NONE;
                         // 予算0のカテゴリも、使っていれば超過として出す。
                         // budget > 0 を条件に入れていたころは「残 ¥161,238」と出て逆に見えた
                         const over = showBudget && spent > budget;
