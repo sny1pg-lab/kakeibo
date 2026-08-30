@@ -37,6 +37,10 @@ const LEGACY_GROUPS = [
   { name: "固定費", kind: KIND_MONTH },
 ];
 const GROUP_ROW = "set_groups";
+// 家計簿の連動でできる行の印。立替先の写しと、写しから入った明細に付く。
+// どちらも連動元が持つものなので、こちら側では直せないようにする
+const LINK_PREFIX = "lk_";
+function isLinked(x) { return String(x && x.id).indexOf(LINK_PREFIX) === 0; }
 // カテゴリの並び順。id を並べた1行として持つ。ここに無いものは後ろに回る
 const CATORDER_ROW = "set_catorder";
 
@@ -417,7 +421,7 @@ function amountStyle(x) {
  * 名前だけの一覧を編集する部品。立替先と支払方法に使う。
  * 予算のような付随する値は持たず、追加と改名と削除だけができる。
  */
-function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete }) {
+function MasterList({ title, hint, names, boxes, useCount, onAdd, onRename, onDelete }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(null);     // 変更前の名前
@@ -447,11 +451,20 @@ function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete })
   return (
     <div style={{ marginTop: 22 }}>
       <div className="kb-section-label">{title}</div>
+      {(boxes || [{ box: "", groups: [{ name: "", rows: names.map((n) => ({ id: n, name: n })) }] }]).map((b) => (
+        <React.Fragment key={b.box || "_"}>
+          {b.box && <div className="kb-section-label sub">{b.box}</div>}
+          {b.groups.map((gp) => (
+            <React.Fragment key={gp.name || "_"}>
+              {gp.name && <div className="kb-section-label sub" style={{ marginLeft: 12 }}>{gp.name}</div>}
       <div className="kb-card" style={{ background: "#FAFAFB" }}>
-        {names.map((n) => {
+        {gp.rows.map((row) => {
+          const n = row.name;
           const used = useCount(n);
+          // 連動でできた写しは、連動元の家計簿が持つもの。ここでは直せない
+          const locked = isLinked(row);
           return (
-            <div className="kb-row" key={n} style={{ cursor: "default" }}>
+            <div className="kb-row" key={row.id} style={{ cursor: "default" }}>
               {editing === n ? (
                 <div className="kb-rowmain">
                   <input
@@ -469,7 +482,9 @@ function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete })
                 </div>
               )}
               <div className="kb-rowright">
-                {editing === n ? (
+                {locked ? (
+                  <span className="kb-rowsub" style={{ marginRight: 4 }}>連動</span>
+                ) : editing === n ? (
                   <>
                     <button className="kb-iconbtn" onClick={submitRename} aria-label="名前を保存"><Check size={15} /></button>
                     <button className="kb-iconbtn" onClick={reset} aria-label="取消"><X size={14} /></button>
@@ -490,6 +505,10 @@ function MasterList({ title, hint, names, useCount, onAdd, onRename, onDelete })
           );
         })}
       </div>
+            </React.Fragment>
+          ))}
+        </React.Fragment>
+      ))}
       {hint && <div className="kb-note">{hint}</div>}
       {error && <div className="kb-err">{error}</div>}
       {adding ? (
@@ -1388,6 +1407,8 @@ function KakeiboApp() {
   const namesOf = useCallback((group) => masterRowsOf(group).map((r) => r.name), [masterRowsOf]);
 
   const parties = useMemo(() => namesOf(PARTY_GROUP), [namesOf]);
+  const partyRows = useMemo(() => masterRowsOf(PARTY_GROUP), [masterRowsOf]);
+
   const methods = useMemo(() => namesOf(METHOD_GROUP), [namesOf]);
 
   /* ---- この家計簿で使う機能 ---- */
@@ -2207,7 +2228,39 @@ function KakeiboApp() {
       settled: items.filter((t) => t.settled).reduce((a, t) => a + (Number(t.amount) || 0), 0),
       count: items.length,
     };
-  }).filter((p) => p.count > 0).sort((a, b) => b.unsettled - a.unsettled), [partyNames, scopedSettlements]);
+  }), [partyNames, scopedSettlements]);
+  const summaryOf = useCallback(
+    (name) => partySummary.find((p) => p.party === name) || { party: name, items: [], unsettled: 0, settled: 0, count: 0 },
+    [partySummary]
+  );
+
+  /**
+   * 立替先を枠でまとめる。連動でできた写しは note に「枠/グループ」が入っている。
+   * 枠を持たないものは最後に「このほか」としてまとめる。
+   */
+  const partyBoxes = useMemo(() => {
+    const out = [];
+    // 一覧から消した立替先でも、記録が残っていれば出す。見えないと直せなくなる
+    const extra = [];
+    scopedSettlements.forEach((t) => {
+      if (t.party && !partyRows.some((r) => r.name === t.party)
+          && !extra.some((r) => r.name === t.party)) {
+        extra.push({ id: "x_" + t.party, name: t.party, note: "" });
+      }
+    });
+    partyRows.concat(extra).forEach((r) => {
+      const parts = String(r.note || "").split("/");
+      const box = (parts[0] || "").trim();
+      const grp = (parts[1] || "").trim();
+      let b = out.find((x) => x.box === box);
+      if (!b) { b = { box, groups: [] }; out.push(b); }
+      let g = b.groups.find((x) => x.name === grp);
+      if (!g) { g = { name: grp, rows: [] }; b.groups.push(g); }
+      g.rows.push(r);
+    });
+    // 枠のないものを最後に回す
+    return out.sort((a, b) => (a.box ? 0 : 1) - (b.box ? 0 : 1));
+  }, [partyRows, scopedSettlements]);
 
   const maxParty = Math.max(...partySummary.map((p) => p.unsettled + p.settled), 1);
   const dPartyItems = detail && detail.type === "party"
@@ -2767,11 +2820,11 @@ function KakeiboApp() {
                 ))}
               </div>
 
-              {partySummary.length === 0 ? (
+              {partyBoxes.length === 0 ? (
                 <div className="kb-card" style={{ marginTop: 12 }}>
                   <div className="kb-empty">
-                    <strong>{tkMonth === null ? "立替の記録がありません" : `${MONTH_LABELS[tkMonth]}の立替はありません`}</strong>
-                    {tkMonth === null ? "右下のボタンから記録してください。" : "上の年間を押すと全期間に戻ります。"}
+                    <strong>立替先がありません</strong>
+                    カテゴリ編集から追加してください。
                   </div>
                 </div>
               ) : (
@@ -2779,8 +2832,22 @@ function KakeiboApp() {
                   <div className="kb-section-label">
                     {tkMonth === null ? "区分ごとの未申請" : `${MONTH_LABELS[tkMonth]}の区分ごとの未申請`}
                   </div>
-                  <div className="kb-card">
-                    {partySummary.map((p) => (
+                  {/* 枠ごとに見出しを挟む。連動でできた立替先は、
+                      連動先のグループの見出しの下に、その並びのまま出る。
+                      記録が無くても出すので、どこへ入れるかがここで分かる */}
+                  {partyBoxes.map((b) => (
+                    <React.Fragment key={b.box || "_"}>
+                      {b.box ? <div className="kb-section-label">{b.box}</div>
+                             : partyBoxes.length > 1 ? <div className="kb-section-label">このほか</div> : null}
+                      {b.groups.map((gp) => {
+                        // 枠を持たないものは、記録があるぶんだけ出す
+                        const list = b.box ? gp.rows : gp.rows.filter((r) => summaryOf(r.name).count > 0);
+                        if (!list.length) return null;
+                        return (
+                          <React.Fragment key={gp.name || "_"}>
+                            {gp.name && <div className="kb-section-label sub">{gp.name}</div>}
+                            <div className="kb-card">
+                              {list.map((r) => summaryOf(r.name)).map((p) => (
                       <button className="kb-row" key={p.party} onClick={() => openDetail("party", p.party)}>
                         <div className="kb-rowmain">
                           <div className="kb-partytop">
@@ -2800,8 +2867,13 @@ function KakeiboApp() {
                         </div>
                         <ChevronRight size={17} className="kb-chev" />
                       </button>
-                    ))}
-                  </div>
+                              ))}
+                            </div>
+                          </React.Fragment>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
                 </>
               )}
             </>
@@ -3003,10 +3075,18 @@ function KakeiboApp() {
                 </CheckRow>
               )}
               {enError && <div className="kb-err">{enError}</div>}
+              {/* 連動で入った明細は、個人の家計簿が持つもの。
+                  ここで直しても、次に向こうを触ったときに上書きされて気づけない */}
+              {isLinked({ id: entryTarget.entryId }) ? (
+                <div className="kb-note" style={{ padding: "0 0 4px" }}>
+                  この記録は個人の家計簿の立替から入ったものです。直すときは、そちらの立替を直してください。
+                </div>
+              ) : (
               <button className="kb-btn" onClick={submitEntry}>
                 {entryTarget.entryId ? "保存する" : "記録する"}
               </button>
-              {entryTarget.entryId ? (
+              )}
+              {entryTarget.entryId && !isLinked({ id: entryTarget.entryId }) ? (
                 <div className="kb-btn-row" style={{ marginTop: 9 }}>
                   {enConfirmDel ? (
                     <>
@@ -3050,7 +3130,16 @@ function KakeiboApp() {
               <div className="kb-field">
                 <label className="kb-label">区分</label>
                 <select className="kb-input" value={tkParty} onChange={(ev) => setTkParty(ev.target.value)}>
-                  {withCurrent(parties, tkParty).map((p) => <option key={p} value={p}>{p}</option>)}
+                  {/* 連動の写しは「おうち家計簿・生活費」のようにまとめて出す */}
+                  {partyBoxes.map((b) => b.groups.map((gp) => {
+                    const label = [b.box, gp.name].filter(Boolean).join("・");
+                    const opts = gp.rows.map((r) => <option key={r.id} value={r.name}>{r.name}</option>);
+                    return label
+                      ? <optgroup key={b.box + "/" + gp.name} label={label}>{opts}</optgroup>
+                      : opts;
+                  }))}
+                  {parties.indexOf(tkParty) < 0 && tkParty
+                    ? <option value={tkParty}>{tkParty}</option> : null}
                 </select>
               </div>
               <div className="kb-field">
@@ -3295,8 +3384,9 @@ function KakeiboApp() {
                   {uses.settle && (
                   <MasterList
                     title="立替先"
-                    hint="立替タブの区分になります。名前を変えると、これまでの記録もまとめて変わります。"
+                    hint="立替タブの区分になります。名前を変えると、これまでの記録もまとめて変わります。「連動」と付いているものは、おうちの家計簿のカテゴリの写しです。名前や並びはおうち側で変えてください。"
                     names={parties}
+                    boxes={partyBoxes}
                     useCount={(n) => masterUseCount(PARTY_GROUP, n)}
                     onAdd={(n) => addMaster(PARTY_GROUP, n)}
                     onRename={(o, n) => renameMaster(PARTY_GROUP, o, n)}
