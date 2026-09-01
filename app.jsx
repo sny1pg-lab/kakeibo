@@ -381,10 +381,15 @@ function rowTitle(x, kind) {
   return entryTitle(x);
 }
 
-/** 下段の補足。既定は支払い方法で、振替だけ振替元と振替先を出す。 */
-function rowSub(x, kind) {
+/**
+ * 下段の補足。既定は支払い方法で、振替だけ振替元と振替先を出す。
+ *
+ * noMethod を渡すと支払い方法を出さない。支払い方法を使わない家計簿でも、
+ * 連動で入った明細は個人の家計簿の支払方法を持っているため。
+ */
+function rowSub(x, kind, noMethod) {
   if (kind === "transfer") return `振替・${x.from} → ${x.to}`;
-  return x.method || "";
+  return noMethod ? "" : (x.method || "");
 }
 
 /**
@@ -399,8 +404,8 @@ function rowSub(x, kind) {
  * 下段は補足。中身が無くても場所は確保して、一覧の行の高さを揃える。
  * sub を渡すと下段だけ差し替えられる（未確定はカテゴリも要るため）。
  */
-function RowMain({ x, kind = x.kind, sub, ...rest }) {
-  const note = sub === undefined ? rowSub(x, kind) : sub;
+function RowMain({ x, kind = x.kind, sub, noMethod, ...rest }) {
+  const note = sub === undefined ? rowSub(x, kind, noMethod) : sub;
   return (
     <div className="kb-rowmain" {...rest}>
       <div className="kb-rowtitle">
@@ -2692,7 +2697,7 @@ function KakeiboApp() {
                               x={r}
                               style={{ cursor: "pointer" }}
                               onClick={() => openEntryEdit(catById(r.catId), r)}
-                              sub={[r.catName, r.method].filter(Boolean).join("・")}
+                              sub={[r.catName, uses.method ? r.method : ""].filter(Boolean).join("・")}
                             />
                             <span className="kb-amount" style={amountStyle(r)}>{yen(r.amount)}</span>
                             <button className="kb-iconbtn confirm" onClick={() => markSettled(r, true)} aria-label="精算済みにする">
@@ -2746,8 +2751,8 @@ function KakeiboApp() {
                                 r.kind === "transfer"
                                   ? `振替・${r.from} → ${r.to}`
                                   : r.kind === "settlement"
-                                    ? [`立替・${r.party}`, r.method].filter(Boolean).join("・")
-                                    : [isIncome(r) ? "収入" : null, r.catName, r.method].filter(Boolean).join("・")
+                                    ? [`立替・${r.party}`, uses.method ? r.method : ""].filter(Boolean).join("・")
+                                    : [isIncome(r) ? "収入" : null, r.catName, uses.method ? r.method : ""].filter(Boolean).join("・")
                               }
                             />
                             <span className="kb-amount" style={{ color: "var(--pending)" }}>
@@ -2802,7 +2807,7 @@ function KakeiboApp() {
                         ) : (
                           <button className="kb-row" key={e.id} onClick={() => openEntryEdit(catById(e.catId), e)}>
                             <div className="kb-dot" style={{ background: e.color }}>{e.catName.slice(0, 1)}</div>
-                            <RowMain x={e} />
+                            <RowMain x={e} noMethod={!uses.method} />
                             <span className="kb-amount" style={amountStyle(e)}>
                               {isIncome(e) ? "+" : ""}{yen(Math.abs(Number(e.amount) || 0))}
                             </span>
@@ -2873,11 +2878,9 @@ function KakeiboApp() {
                     </div>
                     <div className="kb-card">
                       {anaRows.filter((r) => r.cat.group === group).map(({ cat, spent, budget, color }) => {
-                        // 月別のとき、自由費以外は月の予算が実感と合わないので
-                        // 残と超過は出さず、使った額だけを見せる
-                        // 予算外のカテゴリは、使った額だけを出す
-                        const showBudget = (anaScope === "year" || kindOf(cat.group) === KIND_REST)
-                          && kindOf(cat.group) !== KIND_NONE;
+                        // 予算外のカテゴリだけは、使った額しか出さない。
+                        // 月別では、年間予算のカテゴリは年額を12で割った額と比べる
+                        const showBudget = kindOf(cat.group) !== KIND_NONE;
                         // 予算0のカテゴリも、使っていれば超過として出す。
                         // budget > 0 を条件に入れていたころは「残 ¥161,238」と出て逆に見えた
                         const over = showBudget && spent > budget;
@@ -3046,7 +3049,7 @@ function KakeiboApp() {
                         <span className="kb-detail-date">
                           {t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}` : "—"}
                         </span>
-                        <RowMain x={t} kind="settlement" onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }} />
+                        <RowMain x={t} kind="settlement" noMethod={!uses.method} onClick={() => { leaveDetail(); openTkEdit(t); }} style={{ cursor: "pointer" }} />
                         <span className="kb-amount" style={{
                           color: t.pending ? "var(--pending)"
                             : linked ? undefined
@@ -3129,7 +3132,7 @@ function KakeiboApp() {
                           <span className="kb-detail-date">
                             {e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}` : "—"}
                           </span>
-                          <RowMain x={e} />
+                          <RowMain x={e} noMethod={!uses.method} />
                           <span className="kb-amount" style={amountStyle(e)}>
                             {isIncome(e) ? "+" : ""}{yen(Math.abs(Number(e.amount) || 0))}
                           </span>
