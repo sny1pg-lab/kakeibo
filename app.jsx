@@ -2878,9 +2878,18 @@ function KakeiboApp() {
                     </div>
                     <div className="kb-card">
                       {anaRows.filter((r) => r.cat.group === group).map(({ cat, spent, budget, color }) => {
-                        // 予算外のカテゴリだけは、使った額しか出さない。
-                        // 月別では、年間予算のカテゴリは年額を12で割った額と比べる
-                        const showBudget = kindOf(cat.group) !== KIND_NONE;
+                        // 予算外のカテゴリは、使った額しか出さない。
+                        //
+                        // 月別のとき、年間予算のカテゴリを出すかは家計簿によって変える。
+                        // 「残り」のグループがある家計簿（ゆき・もと）では出さない。
+                        // 予定費のように年に何回かの出費は、年額を12で割った額と
+                        // 月ごとに比べても実感と合わないため。月で見たいのは残りのぶん。
+                        // 残りのグループが無い家計簿（おうち）では、比べる相手が
+                        // ほかに無いので年間予算も出す。
+                        const k = kindOf(cat.group);
+                        const showBudget = k !== KIND_NONE
+                          && (anaScope === "year" || k === KIND_MONTH || k === KIND_REST
+                              || !budgetPlan.hasRest);
                         // 予算0のカテゴリも、使っていれば超過として出す。
                         // budget > 0 を条件に入れていたころは「残 ¥161,238」と出て逆に見えた
                         const over = showBudget && spent > budget;
