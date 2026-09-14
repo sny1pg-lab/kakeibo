@@ -1225,7 +1225,7 @@
       setEnShop("");
       setEnAmount("");
       setEnType("expense");
-      if (!uses.method) setEnMethod("");
+      setEnMethod((m) => !uses.method ? "" : methods.indexOf(m) < 0 ? methods[0] || "" : m);
       setEnPending(uses.pending);
       setEnSettled(false);
       setEnError("");

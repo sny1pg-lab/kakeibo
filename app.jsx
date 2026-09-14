@@ -1680,7 +1680,8 @@ function KakeiboApp() {
     setEnMemo(""); setEnShop("");
     setEnAmount("");
     setEnType("expense");
-    if (!uses.method) setEnMethod("");
+    // 選び直すまで前の支払い方法を残すが、一度も選んでいないと空のまま保存されてしまう
+    setEnMethod((m) => (!uses.method ? "" : methods.indexOf(m) < 0 ? methods[0] || "" : m));
     // 入力した時点では金額は未確定。確定の管理を使わない家計簿では最初から確定にする
     setEnPending(uses.pending);
     setEnSettled(false);   // 入れた時点では未精算
