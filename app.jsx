@@ -2039,6 +2039,8 @@ function KakeiboApp() {
       });
     });
     yearTransfers.forEach((t) => rows.push({ ...t, kind: "transfer" }));
+    // 立替も時系列に混ぜる。振替と同じで、支出の合計には数えない
+    if (uses.settle) yearSettlements.forEach((s) => rows.push({ ...s, kind: "settlement" }));
     rows.sort((a, b) => {
       const d = a.date === b.date
         ? String(a.id).localeCompare(String(b.id))
@@ -2046,7 +2048,7 @@ function KakeiboApp() {
       return sortAsc ? d : -d;
     });
     return rows;
-  }, [yearEntries, yearTransfers, budgetCats, catIndex, sortAsc]);
+  }, [yearEntries, yearTransfers, yearSettlements, uses.settle, budgetCats, catIndex, sortAsc]);
 
   /* ---- 未確定（Excelで金額をオレンジにしていたもの） ---- */
 
@@ -2157,16 +2159,17 @@ function KakeiboApp() {
   const matchesHistCat = useCallback((row) => {
     if (histCat === null) return true;
     if (histCat === "transfer") return row.kind === "transfer";
+    if (histCat === "settlement") return row.kind === "settlement";
     if (String(histCat).startsWith(HIST_GROUP)) {
-      return row.kind !== "transfer" && groupedCatIds[row.catId] === histCat.slice(HIST_GROUP.length);
+      return row.kind === "expense" && groupedCatIds[row.catId] === histCat.slice(HIST_GROUP.length);
     }
-    return row.kind !== "transfer" && row.catId === histCat;
+    return row.kind === "expense" && row.catId === histCat;
   }, [histCat, groupedCatIds]);
 
   const histMonthTotals = useMemo(() => {
     const arr = Array(12).fill(0);
     yearEntries.forEach((e) => {
-      if (histCat === "transfer") return;
+      if (histCat === "transfer" || histCat === "settlement") return;
       if (String(histCat).startsWith(HIST_GROUP)) {
         if (groupedCatIds[e.categoryId] !== histCat.slice(HIST_GROUP.length)) return;
       } else if (histCat !== null && e.categoryId !== histCat) {
@@ -2179,11 +2182,12 @@ function KakeiboApp() {
 
   /** カテゴリ絞り込みのチップに出す件数。 */
   const histCatCounts = useMemo(() => {
-    const m = { transfer: 0 };
+    const m = { transfer: 0, settlement: 0 };
     monthlyGroups.forEach((g) => { m[HIST_GROUP + g.name] = 0; });
     allRows.forEach((r) => {
       if (typeof histMonth === "number" && monthIdxOf(r.date) !== histMonth) return;
       if (r.kind === "transfer") { m.transfer += 1; return; }
+      if (r.kind === "settlement") { m.settlement += 1; return; }
       m[r.catId] = (m[r.catId] || 0) + 1;
       if (groupedCatIds[r.catId]) m[HIST_GROUP + groupedCatIds[r.catId]] += 1;
     });
@@ -2193,7 +2197,7 @@ function KakeiboApp() {
   const histRows = allRows
     .filter((e) => typeof histMonth !== "number" || monthIdxOf(e.date) === histMonth)
     .filter(matchesHistCat);
-  const histTotal = histRows.filter((e) => e.kind !== "transfer").reduce((a, e) => a + signedAmount(e), 0);
+  const histTotal = histRows.filter((e) => e.kind === "expense").reduce((a, e) => a + signedAmount(e), 0);
   const historyByDate = useMemo(() => {
     const out = [];
     histRows.forEach((e) => {
@@ -2618,6 +2622,14 @@ function KakeiboApp() {
                       振替{histCatCounts.transfer ? ` ${histCatCounts.transfer}` : ""}
                     </button>
                   )}
+                  {uses.settle && (
+                    <button
+                      className={`kb-tagchip ${histCat === "settlement" ? "on" : ""} ${!histCatCounts.settlement ? "empty" : ""}`}
+                      onClick={() => setHistCat(histCat === "settlement" ? null : "settlement")}
+                    >
+                      立替{histCatCounts.settlement ? ` ${histCatCounts.settlement}` : ""}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -2790,7 +2802,7 @@ function KakeiboApp() {
                 </div>
               ) : (
                 historyByDate.map((day) => {
-                  const dayTotal = day.rows.filter((e) => e.kind !== "transfer").reduce((s, e) => s + signedAmount(e), 0);
+                  const dayTotal = day.rows.filter((e) => e.kind === "expense").reduce((s, e) => s + signedAmount(e), 0);
                   return (
                     <div key={day.date}>
                       <div className="kb-datehead">
@@ -2802,6 +2814,18 @@ function KakeiboApp() {
                           <button className="kb-row" key={e.id} onClick={() => openTrEdit(e)}>
                             <div className="kb-dot" style={{ background: "#AEB4BC" }}><ArrowLeftRight size={15} /></div>
                             <RowMain x={e} />
+                            <span className="kb-amount" style={{ color: e.pending ? "var(--pending)" : "var(--sub)" }}>{yen(e.amount)}</span>
+                            <ChevronRight size={17} className="kb-chev" />
+                          </button>
+                        ) : e.kind === "settlement" ? (
+                          /* 立替は支出に数えないので、振替と同じ灰色の丸で出す。
+                             立替先は上段に出ないぶん、下段で補う */
+                          <button className="kb-row" key={e.id} onClick={() => openTkEdit(e)}>
+                            <div className="kb-dot" style={{ background: "#AEB4BC" }}><Wallet size={15} /></div>
+                            <RowMain
+                              x={e}
+                              sub={[`立替・${e.party}`, uses.method ? e.method : ""].filter(Boolean).join("・")}
+                            />
                             <span className="kb-amount" style={{ color: e.pending ? "var(--pending)" : "var(--sub)" }}>{yen(e.amount)}</span>
                             <ChevronRight size={17} className="kb-chev" />
                           </button>
