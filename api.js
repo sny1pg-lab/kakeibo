@@ -18,6 +18,8 @@
   var SNAPSHOT_KEY = 'kakeibo.snapshot';
   var COLUMNS_KEY = 'kakeibo.columns';
   var OLD_CONFIG_KEY = 'kakeibo.apiUrl';   // 家計簿が1つだったころの接続先
+  var LOG_KEY = 'kakeibo.loadlog';         // 読み込みの記録（家計簿ごと）
+  var LOG_MAX = 30;
   // 引き継ぎで作る最初の家計簿の名前。app は公開リポジトリへ出るので、
   // 人の名前は書かずに当たり障りのないものにしてある。画面から変えられる
   var FIRST_BOOK_NAME = '個人';
@@ -159,22 +161,65 @@
       init.body = JSON.stringify(options.body);
     }
 
+    // どこで止まったのかを残す。遅いのか失敗するのかを、あとから切り分けるため
+    var started = now();
+    var mark = { how: options.method === 'GET' ? '読み込み' : '送信', size: 0 };
+    function done(stage, message) {
+      writeLog({
+        at: new Date().toISOString(),
+        how: mark.how,
+        ms: Math.round(now() - started),
+        stage: stage,
+        size: mark.size,
+        online: typeof navigator === 'undefined' || navigator.onLine !== false,
+        message: message || ''
+      });
+    }
+
     return fetch(apiUrl, init)
       .then(function (res) {
-        if (!res.ok) throw new Error('通信に失敗しました（HTTP ' + res.status + '）');
+        if (!res.ok) {
+          done('HTTPエラー', 'HTTP ' + res.status);
+          throw new Error('通信に失敗しました（HTTP ' + res.status + '）');
+        }
         return res.text();
+      }, function (err) {
+        // ここへ来るのは、届かなかったか時間切れになったとき
+        var timedOut = err && (err.name === 'AbortError' || String(err).indexOf('aborted') >= 0);
+        done(timedOut ? '時間切れ' : '届かない', String(err && err.message || err));
+        throw new Error(timedOut
+          ? '応答がないまま' + Math.round(REQUEST_TIMEOUT_MS / 1000) + '秒たちました。回線を確かめてやり直してください。'
+          : '通信できませんでした。回線を確かめてやり直してください。');
       })
       .then(function (text) {
+        mark.size = text.length;
         var json;
         try {
           json = JSON.parse(text);
         } catch (e) {
+          done('応答が読めない', text.slice(0, 80));
           throw new Error('応答を読み取れませんでした。URLとデプロイ設定を確認してください。');
         }
-        if (!json.ok) throw new Error(json.error || 'サーバ側でエラーが発生しました。');
+        if (!json.ok) {
+          done('サーバ側のエラー', json.error || '');
+          throw new Error(json.error || 'サーバ側でエラーが発生しました。');
+        }
+        done('成功', '');
         return json;
       })
       .finally(function () { clearTimeout(timer); });
+  }
+
+  function now() {
+    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  }
+
+  /** 読み込みと送信の結果を、家計簿ごとに新しい順で覚えておく。 */
+  function writeLog(rec) {
+    if (!bookId) return;
+    var list = api.loadLog();
+    list.unshift(rec);
+    storeSet(bookKey(LOG_KEY, bookId), JSON.stringify(list.slice(0, LOG_MAX)));
   }
 
   /* ---- 送信キュー ---- */
@@ -289,7 +334,7 @@
      */
     removeBook: function (id) {
       books = books.filter(function (b) { return b.id !== id; });
-      [QUEUE_KEY, SNAPSHOT_KEY, COLUMNS_KEY].forEach(function (k) { storeDel(bookKey(k, id)); });
+      [QUEUE_KEY, SNAPSHOT_KEY, COLUMNS_KEY, LOG_KEY].forEach(function (k) { storeDel(bookKey(k, id)); });
       if (id === bookId) {
         bookId = books.length ? books[0].id : '';
         queue = [];
@@ -472,6 +517,22 @@
 
     /** 手動で再送する。 */
     retry: function () { backoff = 1000; flush(); },
+
+    /**
+     * 読み込みと送信の記録。新しい順。
+     *
+     * 遅いのか失敗するのか、失敗ならどこで止まったのかを、
+     * 本人の端末で起きたまま残しておくためのもの。
+     */
+    loadLog: function () {
+      if (!bookId) return [];
+      try {
+        var list = JSON.parse(storeGet(bookKey(LOG_KEY, bookId)) || '[]');
+        return Array.isArray(list) ? list : [];
+      } catch (e) { return []; }
+    },
+
+    clearLog: function () { if (bookId) storeDel(bookKey(LOG_KEY, bookId)); },
 
     pendingCount: function () { return queue.length; },
 

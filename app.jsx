@@ -108,6 +108,54 @@ const INCOME_TARGET = "income";
 function isMaster(c) { return MASTER_GROUPS.indexOf(c.group) >= 0; }
 
 /** 一覧の並べ替え。上下の矢印を2つ並べる。端では押せなくする。 */
+/**
+ * 読み込みと送信の記録。遅いのか失敗するのかを、本人の端末で起きたまま見せる。
+ *
+ * 秒数と、止まった場所（届かない・時間切れ・サーバ側のエラーなど）を並べる。
+ * 通信が細いのか、Apps Script の処理が重いのかを切り分けるための材料。
+ */
+function secs(ms) { return ms < 100 ? "0.1秒未満" : (ms / 1000).toFixed(1) + "秒"; }
+
+function LoadLog({ rows, onClear }) {
+  if (rows.length === 0) {
+    return <div className="kb-savebox">まだ記録がありません。読み込むとここに残ります。</div>;
+  }
+  const reads = rows.filter((r) => r.how === "読み込み");
+  const bad = reads.filter((r) => r.stage !== "成功");
+  const avg = reads.length ? reads.reduce((a, r) => a + r.ms, 0) / reads.length : 0;
+  return (
+    <>
+      <div className="kb-savebox">
+        直近の読み込み{reads.length}回のうち、失敗は{bad.length}回。かかった時間は平均{secs(avg)}です。
+      </div>
+      <div className="kb-card" style={{ marginTop: 9 }}>
+        {rows.map((r, i) => (
+          <div className="kb-row" key={i} style={{ cursor: "default" }}>
+            <span className="kb-detail-date">{String(r.at).slice(5, 10).replace("-", "/")}</span>
+            <div className="kb-rowmain">
+              <div className="kb-rowtitle">
+                {r.how}・{r.stage}
+                {r.online === false ? <span className="kb-formula">圏外</span> : null}
+              </div>
+              <div className="kb-rowsub">
+                {String(r.at).slice(11, 16)}
+                {r.size ? `・${Math.round(r.size / 1024)}KB` : ""}
+                {r.message ? `・${r.message}` : ""}
+              </div>
+            </div>
+            <span className="kb-amount" style={r.stage === "成功" ? undefined : { color: "var(--pending)" }}>
+              {secs(r.ms)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="kb-btn-row" style={{ marginTop: 9 }}>
+        <button className="kb-btn ghost" onClick={onClear}>記録を消す</button>
+      </div>
+    </>
+  );
+}
+
 function MoveButtons({ i, count, onMove, what }) {
   if (count <= 1) return null;
   return (
@@ -1079,6 +1127,8 @@ function KakeiboApp() {
   const [enConfirmDel, setEnConfirmDel] = useState(false);
 
   const [catFormOpen, setCatFormOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logRows, setLogRows] = useState([]);
   const [catMode, setCatMode] = useState("add");
   const [catEditId, setCatEditId] = useState(null);
   const [fName, setFName] = useState("");
@@ -1811,9 +1861,12 @@ function KakeiboApp() {
   }
   function submitCat() {
     const name = fName.trim();
-    const amount = Number(fAmount);
+    // 金額を入れてもらうのは、予算タブを使っていない家計簿の、予算を置くグループだけ
+    const needAmount = !budgetPlan.live && kindOf(fGroup) !== KIND_NONE;
+    const amount = needAmount ? Number(fAmount) : 0;
     if (!name) { setFError("カテゴリ名を選択または入力してください"); return; }
-    if (!budgetPlan.live && (!fAmount || isNaN(amount) || amount < 0)) {
+    // 予算外のグループは金額を置かないので、入力も求めない
+    if (needAmount && (!fAmount || isNaN(amount) || amount < 0)) {
       setFError("予算額を正しく入力してください"); return;
     }
 
@@ -2563,7 +2616,7 @@ function KakeiboApp() {
                 </>
               )}
 
-              <button className="kb-hint" onClick={() => { setManageOpen(true); setCatFormOpen(false); }}>
+              <button className="kb-hint" onClick={() => { setManageOpen(true); setCatFormOpen(false); setLogOpen(false); }}>
                 <Settings size={15} />
                 カテゴリ編集
               </button>
@@ -3471,7 +3524,9 @@ function KakeiboApp() {
                     <label className="kb-label">カテゴリ名</label>
                     <input className="kb-input" value={fName} onChange={(ev) => setFName(ev.target.value)} placeholder="カテゴリ名を入力" />
                   </div>
-                  {budgetPlan.live ? (
+                  {kindOf(fGroup) === KIND_NONE ? (
+                    <div className="kb-note">予算外のグループなので、金額は置きません。</div>
+                  ) : budgetPlan.live ? (
                     <div className="kb-note">金額は予算タブで設定します。</div>
                   ) : (
                     <div className="kb-field">
@@ -3630,6 +3685,23 @@ function KakeiboApp() {
                   <div className="kb-btn-row" style={{ marginTop: 9 }}>
                     <button className="kb-btn ghost" onClick={() => { setManageOpen(false); load(); }}>読み込み直す</button>
                   </div>
+
+                  <div className="kb-section-label" style={{ marginTop: 22 }}>読み込みの記録</div>
+                  {logOpen ? (
+                    <LoadLog rows={logRows} onClear={() => { KakeiboAPI.clearLog(); setLogRows([]); }} />
+                  ) : (
+                    <>
+                      <div className="kb-savebox">
+                        開くのに時間がかかるときや、読み込みに失敗したときの記録が残っています。
+                        何秒かかったか、どこで止まったかが分かります。
+                      </div>
+                      <div className="kb-btn-row" style={{ marginTop: 9 }}>
+                        <button className="kb-btn ghost" onClick={() => { setLogRows(KakeiboAPI.loadLog()); setLogOpen(true); }}>
+                          記録を見る
+                        </button>
+                      </div>
+                    </>
+                  )}
 
                   <div className="kb-section-label" style={{ marginTop: 22 }}>接続先</div>
                   <div className="kb-savebox" style={{ wordBreak: "break-all", fontFamily: "ui-monospace, monospace", fontSize: 10.5 }}>
