@@ -22,7 +22,7 @@
   var SHOP_CHIPS = 12;
   var RATE_ROW = "set_rates";
   function settleAmount(amount, rate) {
-    return rate >= 100 ? amount : Math.ceil((Number(amount) || 0) * rate / 100);
+    return rate >= 100 ? amount : (Number(amount) || 0) * rate / 100;
   }
   function moveItem(list, i, delta) {
     const j = i + delta;
@@ -1846,6 +1846,8 @@
       });
       rows.forEach((r) => {
         r.on = !stOff[r.cat.id];
+        r.payExact = r.pay;
+        r.pay = Math.ceil(r.pay);
       });
       const on = rows.filter((r) => r.on);
       return {
@@ -2286,7 +2288,7 @@
         }
       },
       /* @__PURE__ */ React.createElement("span", { className: `kb-tick ${r.on ? "on" : ""}` }, r.on ? /* @__PURE__ */ React.createElement(Check, { size: 13 }) : null),
-      /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, r.cat.name, r.rate < 100 ? /* @__PURE__ */ React.createElement("span", { className: "kb-formula" }, r.rate, "% / ", yen(r.spent)) : null), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, r.count, "\u4EF6")),
+      /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, r.cat.name, r.rate < 100 ? /* @__PURE__ */ React.createElement("span", { className: "kb-formula" }, r.rate, "% / ", yen(r.spent)) : null), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, r.count, "\u4EF6", r.pay !== r.payExact ? `\u30FB${yenExact(r.payExact)} \u3092\u5207\u308A\u4E0A\u3052` : "")),
       /* @__PURE__ */ React.createElement("span", { className: "kb-amount" }, yen(r.pay))
     ))), /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total", style: { paddingTop: 10 } }, /* @__PURE__ */ React.createElement("span", null, stTagNow ? `${stTagNow}\u3078 ` : "", MONTH_LABELS[stBatch.from], "\u301C", MONTH_LABELS[stBatch.to], "\u5206 ", yen(stBatch.pay)), /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, stBatch.count, "\u4EF6")), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 10 } }, stBatch.count === 0 ? /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", disabled: true }, "\u30AB\u30C6\u30B4\u30EA\u3092\u9078\u3093\u3067\u304F\u3060\u3055\u3044") : stConfirm ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setStConfirm(false) }, "\u3084\u3081\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: settleBatch }, stBatch.count, "\u4EF6\u3092\u7CBE\u7B97\u6E08\u307F\u306B\u3059\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setStConfirm(true) }, /* @__PURE__ */ React.createElement(Check, { size: 14, style: { verticalAlign: "-2px", marginRight: 5 } }), stBatch.count === stBatch.all ? "\u3053\u306E\u7BC4\u56F2\u3092\u307E\u3068\u3081\u3066\u7CBE\u7B97\u6E08\u307F\u306B\u3059\u308B" : `\u9078\u3093\u3060${stBatch.rows.filter((r) => r.on).length}\u3064\u306E\u30AB\u30C6\u30B4\u30EA\u3092\u7CBE\u7B97\u6E08\u307F\u306B\u3059\u308B`)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub", style: { padding: "10px 4px 0", whiteSpace: "normal" } }, "\u632F\u308A\u8FBC\u3093\u3060\u3042\u3068\u306B\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u62BC\u3059\u3068\u7CBE\u7B97\u6E08\u307F\u306B\u306A\u308A\u3001\u4E0A\u306E\u8868\u304B\u3089\u6D88\u3048\u307E\u3059\u3002 \u30AB\u30C6\u30B4\u30EA\u3092\u62BC\u3059\u3068\u3001\u305D\u306E\u884C\u3092\u4ECA\u56DE\u306E\u7CBE\u7B97\u304B\u3089\u5916\u305B\u307E\u3059\u3002 1\u4EF6\u305A\u3064\u76F4\u3057\u305F\u3044\u3068\u304D\u306F\u3001\u5C65\u6B74\u306E\u300C\u7CBE\u7B97\u3057\u3066\u3044\u306A\u3044\u300D\u304B\u3089\u62BC\u305B\u307E\u3059\u3002"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-histfilter" }, /* @__PURE__ */ React.createElement("button", { className: `kb-monthchip ${tkMonth === null ? "on" : ""}`, onClick: () => setTkMonth(null) }, /* @__PURE__ */ React.createElement("span", null, "\u5E74\u9593"), /* @__PURE__ */ React.createElement("b", null, tkMonthTotals.reduce((a, b) => a + b, 0).toLocaleString("ja-JP"))), MONTH_LABELS.map((l, i) => /* @__PURE__ */ React.createElement(
       "button",

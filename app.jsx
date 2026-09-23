@@ -53,9 +53,14 @@ const SHOP_CHIPS = 12;
  * 書いていないカテゴリは100%。
  */
 const RATE_ROW = "set_rates";
-/** 精算する額。端数は切り上げる（1件ずつ切り上げるので、合計と内訳が必ず合う）。 */
+/**
+ * 割合を当てた額。端数はそのまま持つ。
+ *
+ * 切り上げるのは、まとめて精算するときのカテゴリごとの合計。
+ * 1件ずつ切り上げると、2件で1円ずつ増えて実際より多くなる。
+ */
 function settleAmount(amount, rate) {
-  return rate >= 100 ? amount : Math.ceil((Number(amount) || 0) * rate / 100);
+  return rate >= 100 ? amount : (Number(amount) || 0) * rate / 100;
 }
 
 /** 一覧の中で1つだけ位置を入れ替える。 */
@@ -2335,7 +2340,12 @@ function KakeiboApp() {
       if (budgetCats.some((c) => c.id === id)) return;
       rows.push({ cat: { id, name: "（カテゴリなし）" }, rate: 100, ...byCat[id] });
     });
-    rows.forEach((r) => { r.on = !stOff[r.cat.id]; });
+    // 端数はカテゴリごとの合計で切り上げる。実際に振り込む単位がこれなので
+    rows.forEach((r) => {
+      r.on = !stOff[r.cat.id];
+      r.payExact = r.pay;
+      r.pay = Math.ceil(r.pay);
+    });
     const on = rows.filter((r) => r.on);
     return {
       from, to, rows,
@@ -3290,7 +3300,10 @@ function KakeiboApp() {
                             {r.cat.name}
                             {r.rate < 100 ? <span className="kb-formula">{r.rate}% / {yen(r.spent)}</span> : null}
                           </div>
-                          <div className="kb-rowsub">{r.count}件</div>
+                          <div className="kb-rowsub">
+                            {r.count}件
+                            {r.pay !== r.payExact ? `・${yenExact(r.payExact)} を切り上げ` : ""}
+                          </div>
                         </div>
                         <span className="kb-amount">{yen(r.pay)}</span>
                       </button>
