@@ -1143,6 +1143,7 @@ function KakeiboApp() {
   const [stFrom, setStFrom] = useState(0);
   const [stTo, setStTo] = useState(new Date().getMonth());
   const [stConfirm, setStConfirm] = useState(false);
+  const [stOff, setStOff] = useState({});   // まとめて精算から外したカテゴリ
   const [enError, setEnError] = useState("");
   const [enConfirmDel, setEnConfirmDel] = useState(false);
 
@@ -2286,13 +2287,18 @@ function KakeiboApp() {
     return true;
   }), [settleItems, stTagNow, stOnlyLeft]);
 
-  /** カテゴリ×月の表。行はカテゴリの並び順、列は1月から12月。 */
+  /**
+   * カテゴリ×月の表。行はカテゴリの並び順、列は1月から12月。
+   *
+   * ここは使った額をそのまま出す。割合を当てるのは下の「まとめて精算する」だけ。
+   * 表で見たいのは家計としていくら使ったかで、返す額は精算するときに分かればよい。
+   */
   const stMatrix = useMemo(() => {
     const byCat = {};
     stScoped.forEach((r) => {
       const row = byCat[r.catId] || (byCat[r.catId] = { months: Array(12).fill(0), total: 0 });
-      row.months[r.month] += r.pay;
-      row.total += r.pay;
+      row.months[r.month] += r.spent;
+      row.total += r.spent;
     });
     const rows = budgetCats
       .filter((c) => byCat[c.id])
@@ -2307,7 +2313,12 @@ function KakeiboApp() {
     return { rows, months, total: months.reduce((a, b) => a + b, 0) };
   }, [stScoped, budgetCats, rateOf]);
 
-  /** まとめて精算する範囲。開始月から終了月まで、精算していないものだけ。 */
+  /**
+   * まとめて精算する範囲。開始月から終了月まで、精算していないものだけ。
+   *
+   * カテゴリは1つずつ外せる。一部だけ先に振り込むことがあるため。
+   * 外したものも一覧には残し、薄く出して合計から抜く。
+   */
   const stBatch = useMemo(() => {
     const from = Math.min(stFrom, stTo), to = Math.max(stFrom, stTo);
     const target = settleItems.filter((r) => !r.settled
@@ -2324,12 +2335,16 @@ function KakeiboApp() {
       if (budgetCats.some((c) => c.id === id)) return;
       rows.push({ cat: { id, name: "（カテゴリなし）" }, rate: 100, ...byCat[id] });
     });
+    rows.forEach((r) => { r.on = !stOff[r.cat.id]; });
+    const on = rows.filter((r) => r.on);
     return {
-      from, to, rows, ids: target.map((r) => r.id),
-      pay: rows.reduce((a, r) => a + r.pay, 0),
-      count: target.length,
+      from, to, rows,
+      ids: target.filter((r) => !stOff[r.catId]).map((r) => r.id),
+      pay: on.reduce((a, r) => a + r.pay, 0),
+      count: on.reduce((a, r) => a + r.count, 0),
+      all: target.length,
     };
-  }, [settleItems, stTagNow, stFrom, stTo, budgetCats, rateOf]);
+  }, [settleItems, stTagNow, stFrom, stTo, budgetCats, rateOf, stOff]);
 
   /** 範囲のぶんをまとめて精算済みにする。 */
   function settleBatch() {
@@ -3228,8 +3243,8 @@ function KakeiboApp() {
                     </table>
                   </div>
                   <div className="kb-rowsub" style={{ padding: "8px 4px 0", whiteSpace: "normal" }}>
-                    返す額です。割合を決めたカテゴリは、その割合で計算しています。
-                    実績タブの支出は全額のままです。
+                    使った額です。精算の割合を決めたカテゴリは、
+                    下の「まとめて精算する」で割合を当てた額になります。
                   </div>
                 </>
               )}
@@ -3257,9 +3272,19 @@ function KakeiboApp() {
                 </div>
               ) : (
                 <>
+                  {/* カテゴリは押して外せる。一部だけ先に振り込むことがあるため */}
                   <div className="kb-card kb-stbatch" style={{ marginTop: 10 }}>
                     {stBatch.rows.map((r) => (
-                      <div className="kb-row" key={r.cat.id} style={{ cursor: "default" }}>
+                      <button
+                        className={`kb-row kb-stpick ${r.on ? "" : "off"}`}
+                        key={r.cat.id}
+                        aria-pressed={r.on}
+                        onClick={() => {
+                          setStOff((p) => Object.assign({}, p, { [r.cat.id]: r.on }));
+                          setStConfirm(false);
+                        }}
+                      >
+                        <span className={`kb-tick ${r.on ? "on" : ""}`}>{r.on ? <Check size={13} /> : null}</span>
                         <div className="kb-rowmain">
                           <div className="kb-rowtitle">
                             {r.cat.name}
@@ -3268,7 +3293,7 @@ function KakeiboApp() {
                           <div className="kb-rowsub">{r.count}件</div>
                         </div>
                         <span className="kb-amount">{yen(r.pay)}</span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                   <div className="kb-detail-total" style={{ paddingTop: 10 }}>
@@ -3277,7 +3302,9 @@ function KakeiboApp() {
                   </div>
                   {/* 数が多いので、押し間違いを防ぐため2段階にする */}
                   <div className="kb-btn-row" style={{ marginTop: 10 }}>
-                    {stConfirm ? (
+                    {stBatch.count === 0 ? (
+                      <button className="kb-btn ghost" disabled>カテゴリを選んでください</button>
+                    ) : stConfirm ? (
                       <>
                         <button className="kb-btn ghost" onClick={() => setStConfirm(false)}>やめる</button>
                         <button className="kb-btn" onClick={settleBatch}>{stBatch.count}件を精算済みにする</button>
@@ -3285,12 +3312,15 @@ function KakeiboApp() {
                     ) : (
                       <button className="kb-btn ghost" onClick={() => setStConfirm(true)}>
                         <Check size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
-                        この範囲をまとめて精算済みにする
+                        {stBatch.count === stBatch.all
+                          ? "この範囲をまとめて精算済みにする"
+                          : `選んだ${stBatch.rows.filter((r) => r.on).length}つのカテゴリを精算済みにする`}
                       </button>
                     )}
                   </div>
                   <div className="kb-rowsub" style={{ padding: "10px 4px 0", whiteSpace: "normal" }}>
-                    振り込んだあとに押してください。押すとこの範囲が精算済みになり、上の表から消えます。
+                    振り込んだあとに押してください。押すと精算済みになり、上の表から消えます。
+                    カテゴリを押すと、その行を今回の精算から外せます。
                     1件ずつ直したいときは、履歴の「精算していない」から押せます。
                   </div>
                 </>
