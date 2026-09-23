@@ -45,6 +45,18 @@ function isLinked(x) { return String(x && x.id).indexOf(LINK_PREFIX) === 0; }
 const CATORDER_ROW = "set_catorder";
 // 店名の候補に並べる数。これを越えるぶんは、打って絞り込んでもらう
 const SHOP_CHIPS = 12;
+/**
+ * 精算の割合。カテゴリのidと百分率を並べた1行として持つ（`c04:50` の形）。
+ *
+ * 実績は全額で見たいが、返す額は一部だけ、というカテゴリがあるため。
+ * 電気がこれで、家計の支出としては全額を数え、もとへ返すのは半分にしている。
+ * 書いていないカテゴリは100%。
+ */
+const RATE_ROW = "set_rates";
+/** 精算する額。端数は切り上げる（1件ずつ切り上げるので、合計と内訳が必ず合う）。 */
+function settleAmount(amount, rate) {
+  return rate >= 100 ? amount : Math.ceil((Number(amount) || 0) * rate / 100);
+}
 
 /** 一覧の中で1つだけ位置を入れ替える。 */
 function moveItem(list, i, delta) {
@@ -216,6 +228,8 @@ const CalendarPlus = (p) => <Svg {...p}><path d="M8 2v4" /><path d="M16 2v4" /><
 const ArrowLeftRight = (p) => <Svg {...p}><path d="m16 3 4 4-4 4" /><path d="M20 7H4" /><path d="m8 21-4-4 4-4" /><path d="M4 17h16" /></Svg>;
 const Target = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></Svg>;
 const CircleAlert = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></Svg>;
+// 精算タブ。お金を返すところなので、お札と戻る矢印にしてある
+const HandCoins = (p) => <Svg {...p}><circle cx="8" cy="8" r="5" /><path d="M10.7 16.5a5 5 0 1 0-4.2-8" /><path d="M3 18h12a2 2 0 0 1 0 4H5" /><path d="m7 22-4-4" /></Svg>;
 
 /** 明細の並び順を入れ替えるボタン。 */
 function SortButton({ asc, onToggle }) {
@@ -1123,6 +1137,12 @@ function KakeiboApp() {
   const [enShop, setEnShop] = useState("");            // 店名。内容とは別に持つ
   const [settleTag, setSettleTag] = useState(null);    // 未精算の一覧の絞り込み（内訳）
   const [settleConfirm, setSettleConfirm] = useState(false);
+  // 精算タブ。内訳・期間・精算していないものだけにするか
+  const [stTag, setStTag] = useState(null);
+  const [stOnlyLeft, setStOnlyLeft] = useState(true);
+  const [stFrom, setStFrom] = useState(0);
+  const [stTo, setStTo] = useState(new Date().getMonth());
+  const [stConfirm, setStConfirm] = useState(false);
   const [enError, setEnError] = useState("");
   const [enConfirmDel, setEnConfirmDel] = useState(false);
 
@@ -1137,6 +1157,7 @@ function KakeiboApp() {
   const [fTags, setFTags] = useState([]);
   const [fTagInput, setFTagInput] = useState("");
   const [fNote, setFNote] = useState("");
+  const [fRate, setFRate] = useState("100");   // 精算の割合（百分率）
   const [fError, setFError] = useState("");
   const [catDeleteId, setCatDeleteId] = useState(null);
 
@@ -1472,6 +1493,42 @@ function KakeiboApp() {
       return ia === ib ? 0 : ia - ib;
     });
   }, [categories]);
+
+  /**
+   * 精算の割合。カテゴリのid → 百分率。書いていないものは100。
+   * 実績は全額のまま、精算だけ割合で計算するために使う。
+   */
+  const settleRates = useMemo(() => {
+    const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === RATE_ROW);
+    const out = {};
+    if (row) row.tags.forEach((t) => {
+      const i = t.lastIndexOf(":");
+      if (i <= 0) return;
+      const n = Number(t.slice(i + 1));
+      if (isFinite(n) && n >= 0 && n < 100) out[t.slice(0, i)] = n;
+    });
+    return out;
+  }, [categories]);
+  const rateOf = useCallback((catId) => {
+    const r = settleRates[catId];
+    return r === undefined ? 100 : r;
+  }, [settleRates]);
+
+  /** 割合を1つ変える。100のものは書かない（既定なので持つ意味がない）。 */
+  function saveRate(catId, rate) {
+    const next = Object.assign({}, settleRates);
+    if (Number(rate) >= 100) delete next[catId];
+    else next[catId] = Number(rate);
+    const row = {
+      id: RATE_ROW, name: "精算の割合", group: FEATURE_GROUP,
+      monthlyBudget: 0, annualBudget: 0,
+      tags: Object.keys(next).map((k) => `${k}:${next[k]}`), note: "",
+    };
+    setCategories((p) => (p.some((c) => c.id === RATE_ROW)
+      ? p.map((c) => (c.id === RATE_ROW ? row : c))
+      : [...p, row]));
+    saveCategory(row);
+  }
 
   /** カテゴリの並び順を保存する。渡された順にそのまま覚える。 */
   function saveCatOrder(list) {
@@ -1836,7 +1893,7 @@ function KakeiboApp() {
   function openCatAdd() {
     setCatMode("add"); setCatEditId(null);
     setFName(""); setFGroup(groupOrder[0] || ""); setFAmount(""); setFTags([]); setFTagInput("");
-    setFNote(""); setFError("");
+    setFNote(""); setFRate("100"); setFError("");
     setCatFormOpen(true);
   }
   function openCatEdit(cat) {
@@ -1844,6 +1901,7 @@ function KakeiboApp() {
     setFName(cat.name); setFGroup(cat.group);
     setFAmount(String(kindOf(cat.group) === KIND_YEAR ? cat.annualBudget || "" : cat.monthlyBudget || ""));
     setFTags([...cat.tags]); setFTagInput(""); setFNote(cat.note || ""); setFError("");
+    setFRate(String(rateOf(cat.id)));
     setCatFormOpen(true);
   }
   function pickGroup(g) {
@@ -1869,6 +1927,12 @@ function KakeiboApp() {
     if (needAmount && (!fAmount || isNaN(amount) || amount < 0)) {
       setFError("予算額を正しく入力してください"); return;
     }
+    // 精算の割合。使わない家計簿では触らせていないので、そのときは常に100
+    const useRate = uses.esettle && canSettleEntry;
+    const rate = useRate ? Number(fRate) : 100;
+    if (useRate && (fRate === "" || isNaN(rate) || rate < 0 || rate > 100)) {
+      setFError("精算の割合は0から100で入れてください"); return;
+    }
 
     if (catMode === "add") {
       const created = {
@@ -1879,6 +1943,7 @@ function KakeiboApp() {
       };
       setCategories((p) => [...p, created]);
       saveCategory(created);
+      if (useRate && rate < 100) saveRate(created.id, rate);
     } else {
       const base = catById(catEditId);
       const updated = {
@@ -1889,6 +1954,7 @@ function KakeiboApp() {
       };
       setCategories((p) => p.map((c) => (c.id === catEditId ? updated : c)));
       saveCategory(updated);
+      if (useRate && rate !== rateOf(catEditId)) saveRate(catEditId, rate);
 
       // グループを変えると、予算のマスターが月額と年額で入れ替わる。
       // 金額を移し替えないと、入れたはずの予算が0になったように見える。
@@ -2187,6 +2253,96 @@ function KakeiboApp() {
     [unsettledRows, settleTagNow]
   );
 
+  /* ---- 精算タブ ---- */
+
+  /**
+   * 精算の対象になる明細。収入は除く。
+   *
+   * 金額は精算する額（割合を当てたあと）と、もとの支出額の両方を持つ。
+   * 実績は全額で見て、返す額だけ割合で計算したいため。
+   */
+  const settleItems = useMemo(() => {
+    if (!canSettleEntry) return [];
+    return yearEntries.filter((e) => !isIncome(e)).map((e) => ({
+      id: e.id, catId: e.categoryId, tag: e.tag || "", settled: !!e.settled,
+      month: monthIdxOf(e.date), spent: Number(e.amount) || 0,
+      pay: settleAmount(e.amount, rateOf(e.categoryId)),
+    }));
+  }, [canSettleEntry, yearEntries, rateOf]);
+
+  // 内訳（立て替えた人）の一覧。記録に出てくる順に並べる
+  const settleTags = useMemo(() => {
+    const seen = [];
+    settleItems.forEach((r) => { if (r.tag && seen.indexOf(r.tag) < 0) seen.push(r.tag); });
+    return seen.sort();
+  }, [settleItems]);
+
+  const stTagNow = stTag && settleTags.indexOf(stTag) >= 0 ? stTag : null;
+
+  /** 絞り込んだあとの対象。内訳と、精算していないものだけにするかで絞る。 */
+  const stScoped = useMemo(() => settleItems.filter((r) => {
+    if (stTagNow && r.tag !== stTagNow) return false;
+    if (stOnlyLeft && r.settled) return false;
+    return true;
+  }), [settleItems, stTagNow, stOnlyLeft]);
+
+  /** カテゴリ×月の表。行はカテゴリの並び順、列は1月から12月。 */
+  const stMatrix = useMemo(() => {
+    const byCat = {};
+    stScoped.forEach((r) => {
+      const row = byCat[r.catId] || (byCat[r.catId] = { months: Array(12).fill(0), total: 0 });
+      row.months[r.month] += r.pay;
+      row.total += r.pay;
+    });
+    const rows = budgetCats
+      .filter((c) => byCat[c.id])
+      .map((c) => ({ cat: c, rate: rateOf(c.id), ...byCat[c.id] }));
+    // 一覧から消したカテゴリでも、記録が残っていれば出す
+    Object.keys(byCat).forEach((id) => {
+      if (budgetCats.some((c) => c.id === id)) return;
+      rows.push({ cat: { id, name: "（カテゴリなし）" }, rate: 100, ...byCat[id] });
+    });
+    const months = Array(12).fill(0);
+    rows.forEach((r) => r.months.forEach((v, i) => { months[i] += v; }));
+    return { rows, months, total: months.reduce((a, b) => a + b, 0) };
+  }, [stScoped, budgetCats, rateOf]);
+
+  /** まとめて精算する範囲。開始月から終了月まで、精算していないものだけ。 */
+  const stBatch = useMemo(() => {
+    const from = Math.min(stFrom, stTo), to = Math.max(stFrom, stTo);
+    const target = settleItems.filter((r) => !r.settled
+      && (!stTagNow || r.tag === stTagNow)
+      && r.month >= from && r.month <= to);
+    const byCat = {};
+    target.forEach((r) => {
+      const row = byCat[r.catId] || (byCat[r.catId] = { pay: 0, spent: 0, count: 0 });
+      row.pay += r.pay; row.spent += r.spent; row.count += 1;
+    });
+    const rows = budgetCats.filter((c) => byCat[c.id])
+      .map((c) => ({ cat: c, rate: rateOf(c.id), ...byCat[c.id] }));
+    Object.keys(byCat).forEach((id) => {
+      if (budgetCats.some((c) => c.id === id)) return;
+      rows.push({ cat: { id, name: "（カテゴリなし）" }, rate: 100, ...byCat[id] });
+    });
+    return {
+      from, to, rows, ids: target.map((r) => r.id),
+      pay: rows.reduce((a, r) => a + r.pay, 0),
+      count: target.length,
+    };
+  }, [settleItems, stTagNow, stFrom, stTo, budgetCats, rateOf]);
+
+  /** 範囲のぶんをまとめて精算済みにする。 */
+  function settleBatch() {
+    const ids = {};
+    stBatch.ids.forEach((id) => { ids[id] = true; });
+    const updated = entries.filter((e) => ids[e.id]).map((e) => ({ ...e, settled: true }));
+    if (!updated.length) return;
+    setEntries((p) => p.map((e) => (ids[e.id] ? { ...e, settled: true } : e)));
+    updated.forEach(saveEntry);
+    setStConfirm(false);
+    flash(`${updated.length}件を精算済みにしました`);
+  }
+
   /** 精算済みの印を付け外しする。 */
   function markSettled(row, settled) {
     const base = entries.find((e) => e.id === row.id);
@@ -2449,12 +2605,15 @@ function KakeiboApp() {
     { key: "history", label: "履歴", icon: ListOrdered },
     { key: "analysis", label: "実績", icon: PieChart },
     ...(uses.settle ? [{ key: "settle", label: "立替", icon: Wallet }] : []),
+    // 明細の精算を使う家計簿だけ。立て替えたぶんを人ごと・月ごとに片付けるところ
+    ...(uses.esettle && canSettleEntry ? [{ key: "esettle", label: "精算", icon: HandCoins }] : []),
   ];
 
-  // 立替を使わない家計簿に切り替えたとき、立替タブに居たままにしない
+  // 使わない家計簿に切り替えたとき、そのタブに居たままにしない
   useEffect(() => {
     if (!uses.settle && tab === "settle") setTab("record");
-  }, [uses.settle, tab]);
+    if ((!uses.esettle || !canSettleEntry) && tab === "esettle") setTab("record");
+  }, [uses.settle, uses.esettle, canSettleEntry, tab]);
 
   /* ---- 描画 ---- */
 
@@ -3004,6 +3163,137 @@ function KakeiboApp() {
                     </div>
                   </div>
                 ))
+              )}
+            </>
+          ) : tab === "esettle" ? (
+            <>
+              {/* 誰の立て替えぶんかで絞る。おうちでは もと・ゆき になる */}
+              {settleTags.length > 1 && (
+                <div className="kb-chips" style={{ marginBottom: 10 }}>
+                  <button className={`kb-tagchip ${stTagNow === null ? "on" : ""}`}
+                          onClick={() => { setStTag(null); setStConfirm(false); }}>すべて</button>
+                  {settleTags.map((t) => (
+                    <button key={t} className={`kb-tagchip ${stTagNow === t ? "on" : ""}`}
+                            onClick={() => { setStTag(stTagNow === t ? null : t); setStConfirm(false); }}>{t}</button>
+                  ))}
+                </div>
+              )}
+
+              <div className="kb-seg" style={{ marginBottom: 10 }}>
+                <button className={stOnlyLeft ? "on" : ""} onClick={() => setStOnlyLeft(true)}>精算していない</button>
+                <button className={!stOnlyLeft ? "on" : ""} onClick={() => setStOnlyLeft(false)}>すべて</button>
+              </div>
+
+              {stMatrix.rows.length === 0 ? (
+                <div className="kb-card">
+                  <div className="kb-empty">
+                    <strong>{stOnlyLeft ? "精算していない記録はありません" : "記録がありません"}</strong>
+                    立て替えたぶんがここに集まります。
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="kb-section-label">月別（{stOnlyLeft ? "精算していないぶん" : "すべて"}）</div>
+                  {/* 12か月ぶん横に並ぶので、この表だけ横にスクロールさせる */}
+                  <div className="kb-matrix-wrap">
+                    <table className="kb-matrix">
+                      <thead>
+                        <tr>
+                          <th className="kb-mx-head">カテゴリ</th>
+                          {MONTH_LABELS.map((l) => <th key={l}>{l}</th>)}
+                          <th className="kb-mx-total">合計</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stMatrix.rows.map((r) => (
+                          <tr key={r.cat.id}>
+                            <th className="kb-mx-head">
+                              {r.cat.name}
+                              {r.rate < 100 ? <span className="kb-mx-rate">{r.rate}%</span> : null}
+                            </th>
+                            {r.months.map((v, i) => (
+                              <td key={i} className={v === 0 ? "empty" : ""}>{v === 0 ? "—" : v.toLocaleString("ja-JP")}</td>
+                            ))}
+                            <td className="kb-mx-total">{r.total.toLocaleString("ja-JP")}</td>
+                          </tr>
+                        ))}
+                        <tr className="kb-mx-sum">
+                          <th className="kb-mx-head">合計</th>
+                          {stMatrix.months.map((v, i) => (
+                            <td key={i} className={v === 0 ? "empty" : ""}>{v === 0 ? "—" : v.toLocaleString("ja-JP")}</td>
+                          ))}
+                          <td className="kb-mx-total">{stMatrix.total.toLocaleString("ja-JP")}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="kb-rowsub" style={{ padding: "8px 4px 0", whiteSpace: "normal" }}>
+                    返す額です。割合を決めたカテゴリは、その割合で計算しています。
+                    実績タブの支出は全額のままです。
+                  </div>
+                </>
+              )}
+
+              <div className="kb-section-label" style={{ marginTop: 22 }}>まとめて精算する</div>
+              <div className="kb-card" style={{ padding: "10px 14px" }}>
+                <div className="kb-inline">
+                  <select className="kb-input" value={stFrom} onChange={(ev) => { setStFrom(Number(ev.target.value)); setStConfirm(false); }}>
+                    {MONTH_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}
+                  </select>
+                  <span style={{ color: "var(--sub)", fontSize: 13 }}>から</span>
+                  <select className="kb-input" value={stTo} onChange={(ev) => { setStTo(Number(ev.target.value)); setStConfirm(false); }}>
+                    {MONTH_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}
+                  </select>
+                  <span style={{ color: "var(--sub)", fontSize: 13 }}>まで</span>
+                </div>
+              </div>
+
+              {stBatch.count === 0 ? (
+                <div className="kb-card" style={{ marginTop: 10 }}>
+                  <div className="kb-empty">
+                    <strong>この範囲に精算していない記録はありません</strong>
+                    月を選び直すか、上の内訳の絞り込みを確かめてください。
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="kb-card kb-stbatch" style={{ marginTop: 10 }}>
+                    {stBatch.rows.map((r) => (
+                      <div className="kb-row" key={r.cat.id} style={{ cursor: "default" }}>
+                        <div className="kb-rowmain">
+                          <div className="kb-rowtitle">
+                            {r.cat.name}
+                            {r.rate < 100 ? <span className="kb-formula">{r.rate}% / {yen(r.spent)}</span> : null}
+                          </div>
+                          <div className="kb-rowsub">{r.count}件</div>
+                        </div>
+                        <span className="kb-amount">{yen(r.pay)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="kb-detail-total" style={{ paddingTop: 10 }}>
+                    <span>{stTagNow ? `${stTagNow}へ ` : ""}{MONTH_LABELS[stBatch.from]}〜{MONTH_LABELS[stBatch.to]}分 {yen(stBatch.pay)}</span>
+                    <span className="kb-detail-count">{stBatch.count}件</span>
+                  </div>
+                  {/* 数が多いので、押し間違いを防ぐため2段階にする */}
+                  <div className="kb-btn-row" style={{ marginTop: 10 }}>
+                    {stConfirm ? (
+                      <>
+                        <button className="kb-btn ghost" onClick={() => setStConfirm(false)}>やめる</button>
+                        <button className="kb-btn" onClick={settleBatch}>{stBatch.count}件を精算済みにする</button>
+                      </>
+                    ) : (
+                      <button className="kb-btn ghost" onClick={() => setStConfirm(true)}>
+                        <Check size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+                        この範囲をまとめて精算済みにする
+                      </button>
+                    )}
+                  </div>
+                  <div className="kb-rowsub" style={{ padding: "10px 4px 0", whiteSpace: "normal" }}>
+                    振り込んだあとに押してください。押すとこの範囲が精算済みになり、上の表から消えます。
+                    1件ずつ直したいときは、履歴の「精算していない」から押せます。
+                  </div>
+                </>
               )}
             </>
           ) : (
@@ -3561,6 +3851,19 @@ function KakeiboApp() {
                     <label className="kb-label">補足（任意・一覧に表示されます）</label>
                     <input className="kb-input" value={fNote} onChange={(ev) => setFNote(ev.target.value)} placeholder="2026/6〜開始" />
                   </div>
+                  {/* 支出は全額のまま、返す額だけ一部にしたいカテゴリのための欄。
+                      電気がこれで、家計としては全額を数え、返すのは半分にしている */}
+                  {uses.esettle && canSettleEntry && (
+                    <div className="kb-field">
+                      <label className="kb-label">精算の割合（％）</label>
+                      <input className="kb-input" type="number" inputMode="numeric" min="0" max="100"
+                             value={fRate} onChange={(ev) => setFRate(ev.target.value)} placeholder="100" />
+                      <div className="kb-note" style={{ marginTop: 6 }}>
+                        立て替えた人へ返す割合です。100のままなら全額。
+                        実績タブの支出は、ここを変えても全額のままです。
+                      </div>
+                    </div>
+                  )}
                   {fError && <div className="kb-err">{fError}</div>}
                   <button className="kb-btn" onClick={submitCat}>{catMode === "add" ? "追加する" : "保存する"}</button>
                   <div className="kb-btn-row" style={{ marginTop: 9 }}>

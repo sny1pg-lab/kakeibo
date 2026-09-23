@@ -20,6 +20,10 @@
   }
   var CATORDER_ROW = "set_catorder";
   var SHOP_CHIPS = 12;
+  var RATE_ROW = "set_rates";
+  function settleAmount(amount, rate) {
+    return rate >= 100 ? amount : Math.ceil((Number(amount) || 0) * rate / 100);
+  }
   function moveItem(list, i, delta) {
     const j = i + delta;
     if (i < 0 || j < 0 || j >= list.length) return list;
@@ -143,6 +147,7 @@
   var ArrowLeftRight = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "m16 3 4 4-4 4" }), /* @__PURE__ */ React.createElement("path", { d: "M20 7H4" }), /* @__PURE__ */ React.createElement("path", { d: "m8 21-4-4 4-4" }), /* @__PURE__ */ React.createElement("path", { d: "M4 17h16" }));
   var Target = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "10" }), /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "6" }), /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "2" }));
   var CircleAlert = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "10" }), /* @__PURE__ */ React.createElement("path", { d: "M12 8v4" }), /* @__PURE__ */ React.createElement("path", { d: "M12 16h.01" }));
+  var HandCoins = (p) => /* @__PURE__ */ React.createElement(Svg, { ...p }, /* @__PURE__ */ React.createElement("circle", { cx: "8", cy: "8", r: "5" }), /* @__PURE__ */ React.createElement("path", { d: "M10.7 16.5a5 5 0 1 0-4.2-8" }), /* @__PURE__ */ React.createElement("path", { d: "M3 18h12a2 2 0 0 1 0 4H5" }), /* @__PURE__ */ React.createElement("path", { d: "m7 22-4-4" }));
   function SortButton({ asc, onToggle }) {
     return /* @__PURE__ */ React.createElement("button", { type: "button", className: "kb-sortbtn", onClick: onToggle }, /* @__PURE__ */ React.createElement(Svg, { size: 13 }, asc ? /* @__PURE__ */ React.createElement("path", { d: "m3 8 4-4 4 4" }) : /* @__PURE__ */ React.createElement("path", { d: "m3 4 4 4 4-4" }), /* @__PURE__ */ React.createElement("path", { d: "M7 4v10" }), /* @__PURE__ */ React.createElement("path", { d: "M12 18h9" }), /* @__PURE__ */ React.createElement("path", { d: "M12 13h6" }), /* @__PURE__ */ React.createElement("path", { d: "M12 8h3" })), asc ? "\u53E4\u3044\u9806" : "\u65B0\u3057\u3044\u9806");
   }
@@ -732,6 +737,11 @@
     const [enShop, setEnShop] = useState("");
     const [settleTag, setSettleTag] = useState(null);
     const [settleConfirm, setSettleConfirm] = useState(false);
+    const [stTag, setStTag] = useState(null);
+    const [stOnlyLeft, setStOnlyLeft] = useState(true);
+    const [stFrom, setStFrom] = useState(0);
+    const [stTo, setStTo] = useState((/* @__PURE__ */ new Date()).getMonth());
+    const [stConfirm, setStConfirm] = useState(false);
     const [enError, setEnError] = useState("");
     const [enConfirmDel, setEnConfirmDel] = useState(false);
     const [catFormOpen, setCatFormOpen] = useState(false);
@@ -745,6 +755,7 @@
     const [fTags, setFTags] = useState([]);
     const [fTagInput, setFTagInput] = useState("");
     const [fNote, setFNote] = useState("");
+    const [fRate, setFRate] = useState("100");
     const [fError, setFError] = useState("");
     const [catDeleteId, setCatDeleteId] = useState(null);
     const [tkFormOpen, setTkFormOpen] = useState(false);
@@ -1013,6 +1024,37 @@
         return ia === ib ? 0 : ia - ib;
       });
     }, [categories]);
+    const settleRates = useMemo(() => {
+      const row = categories.find((c) => c.group === FEATURE_GROUP && c.id === RATE_ROW);
+      const out = {};
+      if (row) row.tags.forEach((t) => {
+        const i = t.lastIndexOf(":");
+        if (i <= 0) return;
+        const n = Number(t.slice(i + 1));
+        if (isFinite(n) && n >= 0 && n < 100) out[t.slice(0, i)] = n;
+      });
+      return out;
+    }, [categories]);
+    const rateOf = useCallback((catId) => {
+      const r = settleRates[catId];
+      return r === void 0 ? 100 : r;
+    }, [settleRates]);
+    function saveRate(catId, rate) {
+      const next = Object.assign({}, settleRates);
+      if (Number(rate) >= 100) delete next[catId];
+      else next[catId] = Number(rate);
+      const row = {
+        id: RATE_ROW,
+        name: "\u7CBE\u7B97\u306E\u5272\u5408",
+        group: FEATURE_GROUP,
+        monthlyBudget: 0,
+        annualBudget: 0,
+        tags: Object.keys(next).map((k) => `${k}:${next[k]}`),
+        note: ""
+      };
+      setCategories((p) => p.some((c) => c.id === RATE_ROW) ? p.map((c) => c.id === RATE_ROW ? row : c) : [...p, row]);
+      saveCategory(row);
+    }
     function saveCatOrder(list) {
       const row = {
         id: CATORDER_ROW,
@@ -1368,6 +1410,7 @@
       setFTags([]);
       setFTagInput("");
       setFNote("");
+      setFRate("100");
       setFError("");
       setCatFormOpen(true);
     }
@@ -1381,6 +1424,7 @@
       setFTagInput("");
       setFNote(cat.note || "");
       setFError("");
+      setFRate(String(rateOf(cat.id)));
       setCatFormOpen(true);
     }
     function pickGroup(g) {
@@ -1413,6 +1457,12 @@
         setFError("\u4E88\u7B97\u984D\u3092\u6B63\u3057\u304F\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
         return;
       }
+      const useRate = uses.esettle && canSettleEntry;
+      const rate = useRate ? Number(fRate) : 100;
+      if (useRate && (fRate === "" || isNaN(rate) || rate < 0 || rate > 100)) {
+        setFError("\u7CBE\u7B97\u306E\u5272\u5408\u306F0\u304B\u3089100\u3067\u5165\u308C\u3066\u304F\u3060\u3055\u3044");
+        return;
+      }
       if (catMode === "add") {
         const created = {
           id: KakeiboAPI.newId("c_"),
@@ -1425,6 +1475,7 @@
         };
         setCategories((p) => [...p, created]);
         saveCategory(created);
+        if (useRate && rate < 100) saveRate(created.id, rate);
       } else {
         const base = catById(catEditId);
         const updated = {
@@ -1438,6 +1489,7 @@
         };
         setCategories((p) => p.map((c) => c.id === catEditId ? updated : c));
         saveCategory(updated);
+        if (useRate && rate !== rateOf(catEditId)) saveRate(catEditId, rate);
         if (base && base.group !== fGroup) {
           const moved = budgets.filter((b) => b.target === catEditId).map((b) => {
             if (kindOf(fGroup) === KIND_YEAR) {
@@ -1733,6 +1785,85 @@
       () => settleTagNow ? unsettledRows.filter((r) => r.tag === settleTagNow) : unsettledRows,
       [unsettledRows, settleTagNow]
     );
+    const settleItems = useMemo(() => {
+      if (!canSettleEntry) return [];
+      return yearEntries.filter((e) => !isIncome(e)).map((e) => ({
+        id: e.id,
+        catId: e.categoryId,
+        tag: e.tag || "",
+        settled: !!e.settled,
+        month: monthIdxOf(e.date),
+        spent: Number(e.amount) || 0,
+        pay: settleAmount(e.amount, rateOf(e.categoryId))
+      }));
+    }, [canSettleEntry, yearEntries, rateOf]);
+    const settleTags = useMemo(() => {
+      const seen = [];
+      settleItems.forEach((r) => {
+        if (r.tag && seen.indexOf(r.tag) < 0) seen.push(r.tag);
+      });
+      return seen.sort();
+    }, [settleItems]);
+    const stTagNow = stTag && settleTags.indexOf(stTag) >= 0 ? stTag : null;
+    const stScoped = useMemo(() => settleItems.filter((r) => {
+      if (stTagNow && r.tag !== stTagNow) return false;
+      if (stOnlyLeft && r.settled) return false;
+      return true;
+    }), [settleItems, stTagNow, stOnlyLeft]);
+    const stMatrix = useMemo(() => {
+      const byCat = {};
+      stScoped.forEach((r) => {
+        const row = byCat[r.catId] || (byCat[r.catId] = { months: Array(12).fill(0), total: 0 });
+        row.months[r.month] += r.pay;
+        row.total += r.pay;
+      });
+      const rows = budgetCats.filter((c) => byCat[c.id]).map((c) => ({ cat: c, rate: rateOf(c.id), ...byCat[c.id] }));
+      Object.keys(byCat).forEach((id) => {
+        if (budgetCats.some((c) => c.id === id)) return;
+        rows.push({ cat: { id, name: "\uFF08\u30AB\u30C6\u30B4\u30EA\u306A\u3057\uFF09" }, rate: 100, ...byCat[id] });
+      });
+      const months = Array(12).fill(0);
+      rows.forEach((r) => r.months.forEach((v, i) => {
+        months[i] += v;
+      }));
+      return { rows, months, total: months.reduce((a, b) => a + b, 0) };
+    }, [stScoped, budgetCats, rateOf]);
+    const stBatch = useMemo(() => {
+      const from = Math.min(stFrom, stTo), to = Math.max(stFrom, stTo);
+      const target = settleItems.filter((r) => !r.settled && (!stTagNow || r.tag === stTagNow) && r.month >= from && r.month <= to);
+      const byCat = {};
+      target.forEach((r) => {
+        const row = byCat[r.catId] || (byCat[r.catId] = { pay: 0, spent: 0, count: 0 });
+        row.pay += r.pay;
+        row.spent += r.spent;
+        row.count += 1;
+      });
+      const rows = budgetCats.filter((c) => byCat[c.id]).map((c) => ({ cat: c, rate: rateOf(c.id), ...byCat[c.id] }));
+      Object.keys(byCat).forEach((id) => {
+        if (budgetCats.some((c) => c.id === id)) return;
+        rows.push({ cat: { id, name: "\uFF08\u30AB\u30C6\u30B4\u30EA\u306A\u3057\uFF09" }, rate: 100, ...byCat[id] });
+      });
+      return {
+        from,
+        to,
+        rows,
+        ids: target.map((r) => r.id),
+        pay: rows.reduce((a, r) => a + r.pay, 0),
+        count: target.length
+      };
+    }, [settleItems, stTagNow, stFrom, stTo, budgetCats, rateOf]);
+    function settleBatch() {
+      const ids = {};
+      stBatch.ids.forEach((id) => {
+        ids[id] = true;
+      });
+      const updated = entries.filter((e) => ids[e.id]).map((e) => ({ ...e, settled: true }));
+      if (!updated.length) return;
+      setEntries((p) => p.map((e) => ids[e.id] ? { ...e, settled: true } : e));
+      updated.forEach(saveEntry);
+      setStConfirm(false);
+      flash(`${updated.length}\u4EF6\u3092\u7CBE\u7B97\u6E08\u307F\u306B\u3057\u307E\u3057\u305F`);
+    }
     function markSettled(row, settled) {
       const base = entries.find((e) => e.id === row.id);
       if (!base) return;
@@ -1939,11 +2070,14 @@
       { key: "record", label: "\u8A18\u9332", icon: PencilLine },
       { key: "history", label: "\u5C65\u6B74", icon: ListOrdered },
       { key: "analysis", label: "\u5B9F\u7E3E", icon: PieChart },
-      ...uses.settle ? [{ key: "settle", label: "\u7ACB\u66FF", icon: Wallet }] : []
+      ...uses.settle ? [{ key: "settle", label: "\u7ACB\u66FF", icon: Wallet }] : [],
+      // 明細の精算を使う家計簿だけ。立て替えたぶんを人ごと・月ごとに片付けるところ
+      ...uses.esettle && canSettleEntry ? [{ key: "esettle", label: "\u7CBE\u7B97", icon: HandCoins }] : []
     ];
     useEffect(() => {
       if (!uses.settle && tab === "settle") setTab("record");
-    }, [uses.settle, tab]);
+      if ((!uses.esettle || !canSettleEntry) && tab === "esettle") setTab("record");
+    }, [uses.settle, uses.esettle, canSettleEntry, tab]);
     if (needsSetup) {
       return /* @__PURE__ */ React.createElement(SetupScreen, { onSave: (n, u) => {
         const b = KakeiboAPI.addBook(n, u);
@@ -2107,7 +2241,34 @@
       const over = showBudget && spent2 > budget;
       const pct = budget > 0 ? Math.min(spent2 / budget * 100, 100) : spent2 > 0 ? 100 : 0;
       return /* @__PURE__ */ React.createElement("button", { className: "kb-row", key: cat.id, onClick: () => openDetail("category", cat.id) }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: color } }, cat.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, cat.name, cat.note && /* @__PURE__ */ React.createElement("span", { className: "kb-titlenote" }, cat.note)), showBudget && /* @__PURE__ */ React.createElement("div", { className: "kb-bar thin" }, /* @__PURE__ */ React.createElement("span", { style: { width: `${pct}%`, background: over ? "var(--red)" : color } })), anaScope === "year" && /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, "\u6708\u5E73\u5747 ", yen(perMonth(spent2)))), /* @__PURE__ */ React.createElement("div", { className: "kb-ana-vals" }, /* @__PURE__ */ React.createElement("div", { className: "kb-ana-spent", style: { color: over ? "var(--red)" : "var(--ink)" } }, yen(spent2)), showBudget && /* @__PURE__ */ React.createElement("div", { className: "kb-ana-rest" }, over ? "\u8D85\u904E" : "\u6B8B", " ", yen(Math.abs(budget - spent2)))), /* @__PURE__ */ React.createElement(ChevronRight, { size: 17, className: "kb-chev" }));
-    }))))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-histfilter" }, /* @__PURE__ */ React.createElement("button", { className: `kb-monthchip ${tkMonth === null ? "on" : ""}`, onClick: () => setTkMonth(null) }, /* @__PURE__ */ React.createElement("span", null, "\u5E74\u9593"), /* @__PURE__ */ React.createElement("b", null, tkMonthTotals.reduce((a, b) => a + b, 0).toLocaleString("ja-JP"))), MONTH_LABELS.map((l, i) => /* @__PURE__ */ React.createElement(
+    }))))) : tab === "esettle" ? /* @__PURE__ */ React.createElement(React.Fragment, null, settleTags.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "kb-chips", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: `kb-tagchip ${stTagNow === null ? "on" : ""}`,
+        onClick: () => {
+          setStTag(null);
+          setStConfirm(false);
+        }
+      },
+      "\u3059\u3079\u3066"
+    ), settleTags.map((t) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: t,
+        className: `kb-tagchip ${stTagNow === t ? "on" : ""}`,
+        onClick: () => {
+          setStTag(stTagNow === t ? null : t);
+          setStConfirm(false);
+        }
+      },
+      t
+    ))), /* @__PURE__ */ React.createElement("div", { className: "kb-seg", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("button", { className: stOnlyLeft ? "on" : "", onClick: () => setStOnlyLeft(true) }, "\u7CBE\u7B97\u3057\u3066\u3044\u306A\u3044"), /* @__PURE__ */ React.createElement("button", { className: !stOnlyLeft ? "on" : "", onClick: () => setStOnlyLeft(false) }, "\u3059\u3079\u3066")), stMatrix.rows.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card" }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, stOnlyLeft ? "\u7CBE\u7B97\u3057\u3066\u3044\u306A\u3044\u8A18\u9332\u306F\u3042\u308A\u307E\u305B\u3093" : "\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093"), "\u7ACB\u3066\u66FF\u3048\u305F\u3076\u3093\u304C\u3053\u3053\u306B\u96C6\u307E\u308A\u307E\u3059\u3002")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, "\u6708\u5225\uFF08", stOnlyLeft ? "\u7CBE\u7B97\u3057\u3066\u3044\u306A\u3044\u3076\u3093" : "\u3059\u3079\u3066", "\uFF09"), /* @__PURE__ */ React.createElement("div", { className: "kb-matrix-wrap" }, /* @__PURE__ */ React.createElement("table", { className: "kb-matrix" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { className: "kb-mx-head" }, "\u30AB\u30C6\u30B4\u30EA"), MONTH_LABELS.map((l) => /* @__PURE__ */ React.createElement("th", { key: l }, l)), /* @__PURE__ */ React.createElement("th", { className: "kb-mx-total" }, "\u5408\u8A08"))), /* @__PURE__ */ React.createElement("tbody", null, stMatrix.rows.map((r) => /* @__PURE__ */ React.createElement("tr", { key: r.cat.id }, /* @__PURE__ */ React.createElement("th", { className: "kb-mx-head" }, r.cat.name, r.rate < 100 ? /* @__PURE__ */ React.createElement("span", { className: "kb-mx-rate" }, r.rate, "%") : null), r.months.map((v, i) => /* @__PURE__ */ React.createElement("td", { key: i, className: v === 0 ? "empty" : "" }, v === 0 ? "\u2014" : v.toLocaleString("ja-JP"))), /* @__PURE__ */ React.createElement("td", { className: "kb-mx-total" }, r.total.toLocaleString("ja-JP")))), /* @__PURE__ */ React.createElement("tr", { className: "kb-mx-sum" }, /* @__PURE__ */ React.createElement("th", { className: "kb-mx-head" }, "\u5408\u8A08"), stMatrix.months.map((v, i) => /* @__PURE__ */ React.createElement("td", { key: i, className: v === 0 ? "empty" : "" }, v === 0 ? "\u2014" : v.toLocaleString("ja-JP"))), /* @__PURE__ */ React.createElement("td", { className: "kb-mx-total" }, stMatrix.total.toLocaleString("ja-JP")))))), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub", style: { padding: "8px 4px 0", whiteSpace: "normal" } }, "\u8FD4\u3059\u984D\u3067\u3059\u3002\u5272\u5408\u3092\u6C7A\u3081\u305F\u30AB\u30C6\u30B4\u30EA\u306F\u3001\u305D\u306E\u5272\u5408\u3067\u8A08\u7B97\u3057\u3066\u3044\u307E\u3059\u3002 \u5B9F\u7E3E\u30BF\u30D6\u306E\u652F\u51FA\u306F\u5168\u984D\u306E\u307E\u307E\u3067\u3059\u3002")), /* @__PURE__ */ React.createElement("div", { className: "kb-section-label", style: { marginTop: 22 } }, "\u307E\u3068\u3081\u3066\u7CBE\u7B97\u3059\u308B"), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { padding: "10px 14px" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-inline" }, /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: stFrom, onChange: (ev) => {
+      setStFrom(Number(ev.target.value));
+      setStConfirm(false);
+    } }, MONTH_LABELS.map((l, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i }, l))), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--sub)", fontSize: 13 } }, "\u304B\u3089"), /* @__PURE__ */ React.createElement("select", { className: "kb-input", value: stTo, onChange: (ev) => {
+      setStTo(Number(ev.target.value));
+      setStConfirm(false);
+    } }, MONTH_LABELS.map((l, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i }, l))), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--sub)", fontSize: 13 } }, "\u307E\u3067"))), stBatch.count === 0 ? /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { className: "kb-empty" }, /* @__PURE__ */ React.createElement("strong", null, "\u3053\u306E\u7BC4\u56F2\u306B\u7CBE\u7B97\u3057\u3066\u3044\u306A\u3044\u8A18\u9332\u306F\u3042\u308A\u307E\u305B\u3093"), "\u6708\u3092\u9078\u3073\u76F4\u3059\u304B\u3001\u4E0A\u306E\u5185\u8A33\u306E\u7D5E\u308A\u8FBC\u307F\u3092\u78BA\u304B\u3081\u3066\u304F\u3060\u3055\u3044\u3002")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-card kb-stbatch", style: { marginTop: 10 } }, stBatch.rows.map((r) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: r.cat.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, r.cat.name, r.rate < 100 ? /* @__PURE__ */ React.createElement("span", { className: "kb-formula" }, r.rate, "% / ", yen(r.spent)) : null), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, r.count, "\u4EF6")), /* @__PURE__ */ React.createElement("span", { className: "kb-amount" }, yen(r.pay))))), /* @__PURE__ */ React.createElement("div", { className: "kb-detail-total", style: { paddingTop: 10 } }, /* @__PURE__ */ React.createElement("span", null, stTagNow ? `${stTagNow}\u3078 ` : "", MONTH_LABELS[stBatch.from], "\u301C", MONTH_LABELS[stBatch.to], "\u5206 ", yen(stBatch.pay)), /* @__PURE__ */ React.createElement("span", { className: "kb-detail-count" }, stBatch.count, "\u4EF6")), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 10 } }, stConfirm ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setStConfirm(false) }, "\u3084\u3081\u308B"), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: settleBatch }, stBatch.count, "\u4EF6\u3092\u7CBE\u7B97\u6E08\u307F\u306B\u3059\u308B")) : /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setStConfirm(true) }, /* @__PURE__ */ React.createElement(Check, { size: 14, style: { verticalAlign: "-2px", marginRight: 5 } }), "\u3053\u306E\u7BC4\u56F2\u3092\u307E\u3068\u3081\u3066\u7CBE\u7B97\u6E08\u307F\u306B\u3059\u308B")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub", style: { padding: "10px 4px 0", whiteSpace: "normal" } }, "\u632F\u308A\u8FBC\u3093\u3060\u3042\u3068\u306B\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u62BC\u3059\u3068\u3053\u306E\u7BC4\u56F2\u304C\u7CBE\u7B97\u6E08\u307F\u306B\u306A\u308A\u3001\u4E0A\u306E\u8868\u304B\u3089\u6D88\u3048\u307E\u3059\u3002 1\u4EF6\u305A\u3064\u76F4\u3057\u305F\u3044\u3068\u304D\u306F\u3001\u5C65\u6B74\u306E\u300C\u7CBE\u7B97\u3057\u3066\u3044\u306A\u3044\u300D\u304B\u3089\u62BC\u305B\u307E\u3059\u3002"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "kb-histfilter" }, /* @__PURE__ */ React.createElement("button", { className: `kb-monthchip ${tkMonth === null ? "on" : ""}`, onClick: () => setTkMonth(null) }, /* @__PURE__ */ React.createElement("span", null, "\u5E74\u9593"), /* @__PURE__ */ React.createElement("b", null, tkMonthTotals.reduce((a, b) => a + b, 0).toLocaleString("ja-JP"))), MONTH_LABELS.map((l, i) => /* @__PURE__ */ React.createElement(
       "button",
       {
         key: i,
@@ -2245,7 +2406,19 @@
         },
         placeholder: "\u5185\u8A33\u540D\u3092\u5165\u529B"
       }
-    ), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", style: { width: "auto", padding: "0 16px" }, onClick: addTag }, "\u8FFD\u52A0"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u88DC\u8DB3\uFF08\u4EFB\u610F\u30FB\u4E00\u89A7\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fNote, onChange: (ev) => setFNote(ev.target.value), placeholder: "2026/6\u301C\u958B\u59CB" })), fError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, fError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitCat }, catMode === "add" ? "\u8FFD\u52A0\u3059\u308B" : "\u4FDD\u5B58\u3059\u308B"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setCatFormOpen(false) }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, budgetCats.filter((c) => c.group === g).map((c, ci, arr) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: c.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, kindOf(c.group) === KIND_YEAR ? `\u5E74\u9593\u4E88\u7B97 ${yenExact(budgetOf(c).annual)}` : kindOf(c.group) === KIND_NONE ? "\u4E88\u7B97\u5916" : `\u6708\u4E88\u7B97 ${yenExact(budgetOf(c).monthly)}`, c.tags.length > 0 ? `\u30FB\u5185\u8A33${c.tags.length}\u4EF6` : "", c.note ? `\u3000${c.note}` : "")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, /* @__PURE__ */ React.createElement(
+    ), /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", style: { width: "auto", padding: "0 16px" }, onClick: addTag }, "\u8FFD\u52A0"))), /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u88DC\u8DB3\uFF08\u4EFB\u610F\u30FB\u4E00\u89A7\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "kb-input", value: fNote, onChange: (ev) => setFNote(ev.target.value), placeholder: "2026/6\u301C\u958B\u59CB" })), uses.esettle && canSettleEntry && /* @__PURE__ */ React.createElement("div", { className: "kb-field" }, /* @__PURE__ */ React.createElement("label", { className: "kb-label" }, "\u7CBE\u7B97\u306E\u5272\u5408\uFF08\uFF05\uFF09"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        className: "kb-input",
+        type: "number",
+        inputMode: "numeric",
+        min: "0",
+        max: "100",
+        value: fRate,
+        onChange: (ev) => setFRate(ev.target.value),
+        placeholder: "100"
+      }
+    ), /* @__PURE__ */ React.createElement("div", { className: "kb-note", style: { marginTop: 6 } }, "\u7ACB\u3066\u66FF\u3048\u305F\u4EBA\u3078\u8FD4\u3059\u5272\u5408\u3067\u3059\u3002100\u306E\u307E\u307E\u306A\u3089\u5168\u984D\u3002 \u5B9F\u7E3E\u30BF\u30D6\u306E\u652F\u51FA\u306F\u3001\u3053\u3053\u3092\u5909\u3048\u3066\u3082\u5168\u984D\u306E\u307E\u307E\u3067\u3059\u3002")), fError && /* @__PURE__ */ React.createElement("div", { className: "kb-err" }, fError), /* @__PURE__ */ React.createElement("button", { className: "kb-btn", onClick: submitCat }, catMode === "add" ? "\u8FFD\u52A0\u3059\u308B" : "\u4FDD\u5B58\u3059\u308B"), /* @__PURE__ */ React.createElement("div", { className: "kb-btn-row", style: { marginTop: 9 } }, /* @__PURE__ */ React.createElement("button", { className: "kb-btn ghost", onClick: () => setCatFormOpen(false) }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))) : /* @__PURE__ */ React.createElement(React.Fragment, null, groupOrder.filter((g) => budgetCats.some((c) => c.group === g)).map((g) => /* @__PURE__ */ React.createElement("div", { key: g }, /* @__PURE__ */ React.createElement("div", { className: "kb-section-label" }, g), /* @__PURE__ */ React.createElement("div", { className: "kb-card", style: { background: "#FAFAFB" } }, budgetCats.filter((c) => c.group === g).map((c, ci, arr) => /* @__PURE__ */ React.createElement("div", { className: "kb-row", key: c.id, style: { cursor: "default" } }, /* @__PURE__ */ React.createElement("div", { className: "kb-dot", style: { background: colorOf(catIndex[c.id]) } }, c.name.slice(0, 1)), /* @__PURE__ */ React.createElement("div", { className: "kb-rowmain" }, /* @__PURE__ */ React.createElement("div", { className: "kb-rowtitle" }, c.name), /* @__PURE__ */ React.createElement("div", { className: "kb-rowsub" }, kindOf(c.group) === KIND_YEAR ? `\u5E74\u9593\u4E88\u7B97 ${yenExact(budgetOf(c).annual)}` : kindOf(c.group) === KIND_NONE ? "\u4E88\u7B97\u5916" : `\u6708\u4E88\u7B97 ${yenExact(budgetOf(c).monthly)}`, c.tags.length > 0 ? `\u30FB\u5185\u8A33${c.tags.length}\u4EF6` : "", c.note ? `\u3000${c.note}` : "")), /* @__PURE__ */ React.createElement("div", { className: "kb-rowright" }, /* @__PURE__ */ React.createElement(
       MoveButtons,
       {
         i: ci,
