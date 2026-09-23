@@ -1140,11 +1140,10 @@ function KakeiboApp() {
   const [enPending, setEnPending] = useState(true);
   const [enSettled, setEnSettled] = useState(false);   // 立て替えたぶんを精算したか
   const [enShop, setEnShop] = useState("");            // 店名。内容とは別に持つ
-  const [settleTag, setSettleTag] = useState(null);    // 未精算の一覧の絞り込み（内訳）
-  const [settleConfirm, setSettleConfirm] = useState(false);
   // 精算タブ。内訳・期間・精算していないものだけにするか
   const [stTag, setStTag] = useState(null);
-  const [stOnlyLeft, setStOnlyLeft] = useState(true);
+  const [stScope, setStScope] = useState("left");   // left=精算していない / done=精算した / all=すべて
+  const [stListOpen, setStListOpen] = useState(false);
   const [stFrom, setStFrom] = useState(0);
   const [stTo, setStTo] = useState(new Date().getMonth());
   const [stConfirm, setStConfirm] = useState(false);
@@ -2220,44 +2219,6 @@ function KakeiboApp() {
     flash(`${yen(row.amount)} を確定しました`);
   }
 
-  /* ---- 明細の精算 ---- */
-
-  /** まだ精算していない明細。立て替えた人（内訳）で絞り込めるようにする。 */
-  const unsettledRows = useMemo(() => {
-    if (!canSettleEntry) return [];
-    const rows = yearEntries
-      .filter((e) => !e.settled && !isIncome(e))
-      .map((e) => {
-        const c = budgetCats.find((x) => x.id === e.categoryId);
-        return {
-          ...e, kind: "expense", catId: e.categoryId,
-          catName: c ? c.name : "（カテゴリなし）",
-          color: colorOf(catIndex[e.categoryId]),
-        };
-      });
-    rows.sort((a, b) => {
-      const d = a.date === b.date
-        ? String(a.id).localeCompare(String(b.id))
-        : a.date.localeCompare(b.date);
-      return sortAsc ? d : -d;
-    });
-    return rows;
-  }, [canSettleEntry, yearEntries, budgetCats, catIndex, sortAsc]);
-
-  // 絞り込みに出す内訳。もと・ゆきのように立て替えた人を選ぶために使う
-  const unsettledTags = useMemo(() => {
-    const seen = [];
-    unsettledRows.forEach((r) => { if (r.tag && seen.indexOf(r.tag) < 0) seen.push(r.tag); });
-    return seen;
-  }, [unsettledRows]);
-
-  // 絞っていた内訳が片付くと選択肢から消える。そのままだと一覧が空のままになるので、
-  // いま出せる内訳に無い絞り込みは効かせない
-  const settleTagNow = settleTag && unsettledTags.indexOf(settleTag) >= 0 ? settleTag : null;
-  const shownUnsettled = useMemo(
-    () => (settleTagNow ? unsettledRows.filter((r) => r.tag === settleTagNow) : unsettledRows),
-    [unsettledRows, settleTagNow]
-  );
 
   /* ---- 精算タブ ---- */
 
@@ -2285,12 +2246,13 @@ function KakeiboApp() {
 
   const stTagNow = stTag && settleTags.indexOf(stTag) >= 0 ? stTag : null;
 
-  /** 絞り込んだあとの対象。内訳と、精算していないものだけにするかで絞る。 */
+  /** 絞り込んだあとの対象。内訳と、精算したかどうかで絞る。 */
   const stScoped = useMemo(() => settleItems.filter((r) => {
     if (stTagNow && r.tag !== stTagNow) return false;
-    if (stOnlyLeft && r.settled) return false;
+    if (stScope === "left" && r.settled) return false;
+    if (stScope === "done" && !r.settled) return false;
     return true;
-  }), [settleItems, stTagNow, stOnlyLeft]);
+  }), [settleItems, stTagNow, stScope]);
 
   /**
    * カテゴリ×月の表。行はカテゴリの並び順、列は1月から12月。
@@ -2326,7 +2288,8 @@ function KakeiboApp() {
    */
   const stBatch = useMemo(() => {
     const from = Math.min(stFrom, stTo), to = Math.max(stFrom, stTo);
-    const target = settleItems.filter((r) => !r.settled
+    const want = stScope === "done";   // 精算したものを取り消す側
+    const target = settleItems.filter((r) => !!r.settled === want
       && (!stTagNow || r.tag === stTagNow)
       && r.month >= from && r.month <= to);
     const byCat = {};
@@ -2348,24 +2311,47 @@ function KakeiboApp() {
     });
     const on = rows.filter((r) => r.on);
     return {
-      from, to, rows,
+      from, to, rows, undo: want,
+      items: target.filter((r) => !stOff[r.catId]),
       ids: target.filter((r) => !stOff[r.catId]).map((r) => r.id),
       pay: on.reduce((a, r) => a + r.pay, 0),
       count: on.reduce((a, r) => a + r.count, 0),
       all: target.length,
     };
-  }, [settleItems, stTagNow, stFrom, stTo, budgetCats, rateOf, stOff]);
+  }, [settleItems, stTagNow, stFrom, stTo, budgetCats, rateOf, stOff, stScope]);
 
-  /** 範囲のぶんをまとめて精算済みにする。 */
+  /** まとめて操作する範囲の明細。1件ずつ直すときに出す。 */
+  const stListRows = useMemo(() => {
+    const byId = {};
+    entries.forEach((e) => { byId[e.id] = e; });
+    return stBatch.items
+      .map((r) => {
+        const e = byId[r.id];
+        if (!e) return null;
+        const c = budgetCats.find((x) => x.id === e.categoryId);
+        return {
+          ...e, kind: "expense", catId: e.categoryId,
+          catName: c ? c.name : "（カテゴリなし）",
+          color: colorOf(catIndex[e.categoryId]),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (a.date === b.date
+        ? String(a.id).localeCompare(String(b.id))
+        : b.date.localeCompare(a.date)));
+  }, [stBatch, entries, budgetCats, catIndex]);
+
+  /** 範囲のぶんをまとめて精算済みにする。取り消す側にも同じ仕組みを使う。 */
   function settleBatch() {
+    const next = !stBatch.undo;
     const ids = {};
     stBatch.ids.forEach((id) => { ids[id] = true; });
-    const updated = entries.filter((e) => ids[e.id]).map((e) => ({ ...e, settled: true }));
+    const updated = entries.filter((e) => ids[e.id]).map((e) => ({ ...e, settled: next }));
     if (!updated.length) return;
-    setEntries((p) => p.map((e) => (ids[e.id] ? { ...e, settled: true } : e)));
+    setEntries((p) => p.map((e) => (ids[e.id] ? { ...e, settled: next } : e)));
     updated.forEach(saveEntry);
     setStConfirm(false);
-    flash(`${updated.length}件を精算済みにしました`);
+    flash(`${updated.length}件を${next ? "精算済みにしました" : "精算していない状態に戻しました"}`);
   }
 
   /** 精算済みの印を付け外しする。 */
@@ -2375,19 +2361,6 @@ function KakeiboApp() {
     const updated = { ...base, settled };
     setEntries((p) => p.map((e) => (e.id === row.id ? updated : e)));
     saveEntry(updated);
-  }
-
-  /** いま見えているぶんをまとめて精算済みにする。 */
-  function settleShown() {
-    const list = shownUnsettled;
-    if (!list.length) return;
-    const ids = {};
-    list.forEach((r) => { ids[r.id] = true; });
-    const updated = entries.filter((e) => ids[e.id]).map((e) => ({ ...e, settled: true }));
-    setEntries((p) => p.map((e) => (ids[e.id] ? { ...e, settled: true } : e)));
-    updated.forEach(saveEntry);
-    setSettleConfirm(false);
-    flash(`${updated.length}件を精算済みにしました`);
   }
 
   const matchesHistCat = useCallback((row) => {
@@ -2824,7 +2797,7 @@ function KakeiboApp() {
                 ))}
               </div>
 
-              {histMonth !== "pending" && histMonth !== "unsettled" && (
+              {histMonth !== "pending" && (
                 <div className="kb-chips" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button className={`kb-tagchip ${histCat === null ? "on" : ""}`} onClick={() => setHistCat(null)}>すべて</button>
                   {budgetCats.filter((c) => !groupedCatIds[c.id]).map((c) => {
@@ -2881,89 +2854,7 @@ function KakeiboApp() {
                 <ChevronRight size={16} className="kb-chev" />
               </button>
               )}
-              {uses.esettle && canSettleEntry && (
-                <button
-                  className={`kb-pendingchip settle ${histMonth === "unsettled" ? "on" : ""} ${unsettledRows.length === 0 ? "empty" : ""}`}
-                  onClick={() => { setHistMonth(histMonth === "unsettled" ? null : "unsettled"); setSettleConfirm(false); }}
-                >
-                  <Wallet size={15} />
-                  <span>精算していない</span>
-                  <b>{unsettledRows.length}件</b>
-                  <ChevronRight size={16} className="kb-chev" />
-                </button>
-              )}
-              {histMonth === "unsettled" ? (
-                <>
-                  {unsettledTags.length > 1 && (
-                    <div className="kb-chips" style={{ marginTop: 8, marginBottom: 0 }}>
-                      <button className={`kb-tagchip ${settleTagNow === null ? "on" : ""}`} onClick={() => { setSettleTag(null); setSettleConfirm(false); }}>すべて</button>
-                      {unsettledTags.map((t) => (
-                        <button key={t} className={`kb-tagchip ${settleTagNow === t ? "on" : ""}`}
-                                onClick={() => { setSettleTag(settleTagNow === t ? null : t); setSettleConfirm(false); }}>
-                          {t} {unsettledRows.filter((r) => r.tag === t).length}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="kb-detail-total" style={{ paddingTop: 8 }}>
-                    <span>未精算 {yen(shownUnsettled.reduce((a, r) => a + r.amount, 0))}</span>
-                    <div className="kb-sortwrap">
-                      <span className="kb-detail-count">{shownUnsettled.length}件</span>
-                      <SortButton asc={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
-                    </div>
-                  </div>
-                  {shownUnsettled.length === 0 ? (
-                    <div className="kb-card">
-                      <div className="kb-empty">
-                        <strong>精算していない記録はありません</strong>
-                        立て替えたぶんはここに集まります。
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* まとめて印を付ける。数が多いので、押し間違いを防ぐため2段階にする */}
-                      <div className="kb-btn-row" style={{ marginBottom: 10 }}>
-                        {settleConfirm ? (
-                          <>
-                            <button className="kb-btn ghost" onClick={() => setSettleConfirm(false)}>やめる</button>
-                            <button className="kb-btn" onClick={settleShown}>
-                              {shownUnsettled.length}件を精算済みにする
-                            </button>
-                          </>
-                        ) : (
-                          <button className="kb-btn ghost" onClick={() => setSettleConfirm(true)}>
-                            <Check size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
-                            この一覧の{shownUnsettled.length}件をまとめて精算済みにする
-                          </button>
-                        )}
-                      </div>
-                      <div className="kb-card">
-                        {shownUnsettled.map((r) => (
-                          <div className="kb-row" key={r.id} style={{ cursor: "default" }}>
-                            <span className="kb-detail-date">
-                              {Number(r.date.slice(5, 7))}/{Number(r.date.slice(8, 10))}
-                            </span>
-                            <RowMain
-                              x={r}
-                              style={{ cursor: "pointer" }}
-                              onClick={() => openEntryEdit(catById(r.catId), r)}
-                              sub={[r.catName, uses.method ? r.method : ""].filter(Boolean).join("・")}
-                            />
-                            <span className="kb-amount" style={amountStyle(r)}>{yen(r.amount)}</span>
-                            <button className="kb-iconbtn confirm" onClick={() => markSettled(r, true)} aria-label="精算済みにする">
-                              <Check size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="kb-rowsub" style={{ padding: "10px 4px 0", whiteSpace: "normal" }}>
-                        精算したものからチェックを押してください。押すとこの一覧から消えます。
-                        内訳で絞ってからまとめて押すと、立て替えた人ごとに片付けられます。
-                      </div>
-                    </>
-                  )}
-                </>
-              ) : histMonth === "pending" ? (
+              {histMonth === "pending" ? (
                 <>
                   <div className="kb-detail-total" style={{ paddingTop: 8 }}>
                     <span>未確定 {yen(pendingRows.reduce((a, r) => a + r.amount, 0))}</span>
@@ -3205,20 +3096,24 @@ function KakeiboApp() {
               )}
 
               <div className="kb-seg" style={{ marginBottom: 10 }}>
-                <button className={stOnlyLeft ? "on" : ""} onClick={() => setStOnlyLeft(true)}>精算していない</button>
-                <button className={!stOnlyLeft ? "on" : ""} onClick={() => setStOnlyLeft(false)}>すべて</button>
+                {[["left", "精算していない"], ["done", "精算した"], ["all", "すべて"]].map(([k, l]) => (
+                  <button key={k} className={stScope === k ? "on" : ""}
+                          onClick={() => { setStScope(k); setStConfirm(false); setStListOpen(false); }}>{l}</button>
+                ))}
               </div>
 
               {stMatrix.rows.length === 0 ? (
                 <div className="kb-card">
                   <div className="kb-empty">
-                    <strong>{stOnlyLeft ? "精算していない記録はありません" : "記録がありません"}</strong>
+                    <strong>{stScope === "left" ? "精算していない記録はありません"
+                      : stScope === "done" ? "精算した記録はありません" : "記録がありません"}</strong>
                     立て替えたぶんがここに集まります。
                   </div>
                 </div>
               ) : (
                 <>
-                  <div className="kb-section-label">月別（{stOnlyLeft ? "精算していないぶん" : "すべて"}）</div>
+                  <div className="kb-section-label">月別（{stScope === "left" ? "精算していないぶん"
+                    : stScope === "done" ? "精算したぶん" : "すべて"}）</div>
                   {/* 12か月ぶん横に並ぶので、この表だけ横にスクロールさせる */}
                   <div className="kb-matrix-wrap">
                     <table className="kb-matrix">
@@ -3259,7 +3154,16 @@ function KakeiboApp() {
                 </>
               )}
 
-              <div className="kb-section-label" style={{ marginTop: 22 }}>まとめて精算する</div>
+              {stScope === "all" ? (
+                <div className="kb-rowsub" style={{ padding: "18px 4px 0", whiteSpace: "normal" }}>
+                  まとめて精算したり、精算を取り消したりするときは、
+                  上で「精算していない」か「精算した」を選んでください。
+                </div>
+              ) : (
+              <>
+              <div className="kb-section-label" style={{ marginTop: 22 }}>
+                {stBatch.undo ? "精算を取り消す" : "まとめて精算する"}
+              </div>
               <div className="kb-card" style={{ padding: "10px 14px" }}>
                 <div className="kb-inline">
                   <select className="kb-input" value={stFrom} onChange={(ev) => { setStFrom(Number(ev.target.value)); setStConfirm(false); }}>
@@ -3273,10 +3177,10 @@ function KakeiboApp() {
                 </div>
               </div>
 
-              {stBatch.count === 0 ? (
+              {stBatch.rows.length === 0 ? (
                 <div className="kb-card" style={{ marginTop: 10 }}>
                   <div className="kb-empty">
-                    <strong>この範囲に精算していない記録はありません</strong>
+                    <strong>この範囲に{stBatch.undo ? "精算した" : "精算していない"}記録はありません</strong>
                     月を選び直すか、上の内訳の絞り込みを確かめてください。
                   </div>
                 </div>
@@ -3320,23 +3224,57 @@ function KakeiboApp() {
                     ) : stConfirm ? (
                       <>
                         <button className="kb-btn ghost" onClick={() => setStConfirm(false)}>やめる</button>
-                        <button className="kb-btn" onClick={settleBatch}>{stBatch.count}件を精算済みにする</button>
+                        <button className={`kb-btn ${stBatch.undo ? "danger" : ""}`} onClick={settleBatch}>
+                          {stBatch.count}件を{stBatch.undo ? "精算していない状態に戻す" : "精算済みにする"}
+                        </button>
                       </>
                     ) : (
                       <button className="kb-btn ghost" onClick={() => setStConfirm(true)}>
                         <Check size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
                         {stBatch.count === stBatch.all
-                          ? "この範囲をまとめて精算済みにする"
-                          : `選んだ${stBatch.rows.filter((r) => r.on).length}つのカテゴリを精算済みにする`}
+                          ? (stBatch.undo ? "この範囲の精算をまとめて取り消す" : "この範囲をまとめて精算済みにする")
+                          : `選んだ${stBatch.rows.filter((r) => r.on).length}つのカテゴリを${stBatch.undo ? "取り消す" : "精算済みにする"}`}
                       </button>
                     )}
                   </div>
                   <div className="kb-rowsub" style={{ padding: "10px 4px 0", whiteSpace: "normal" }}>
-                    振り込んだあとに押してください。押すと精算済みになり、上の表から消えます。
-                    カテゴリを押すと、その行を今回の精算から外せます。
-                    1件ずつ直したいときは、履歴の「精算していない」から押せます。
+                    {stBatch.undo
+                      ? "間違えて精算済みにしたときに戻せます。押すと「精算していない」に戻ります。"
+                      : "振り込んだあとに押してください。押すと精算済みになり、上の表から消えます。"}
+                    カテゴリを押すと、その行を今回の対象から外せます。
                   </div>
+
+                  {/* 1件だけ直したいとき。範囲と内訳で絞ったぶんをそのまま並べる */}
+                  <div className="kb-btn-row" style={{ marginTop: 12 }}>
+                    <button className="kb-btn ghost" onClick={() => setStListOpen((v) => !v)}>
+                      {stListOpen ? "1件ずつ直すのをやめる" : `1件ずつ直す（${stListRows.length}件）`}
+                    </button>
+                  </div>
+                  {stListOpen && (
+                    <div className="kb-card" style={{ marginTop: 10 }}>
+                      {stListRows.map((r) => (
+                        <div className="kb-row" key={r.id} style={{ cursor: "default" }}>
+                          <span className="kb-detail-date">
+                            {Number(r.date.slice(5, 7))}/{Number(r.date.slice(8, 10))}
+                          </span>
+                          {/* 立て替えた人（内訳）は上段に出るので、下段では重ねない */}
+                          <RowMain
+                            x={r}
+                            sub={[r.catName, uses.method ? r.method : ""].filter(Boolean).join("・")}
+                          />
+                          <span className="kb-amount">{yen(r.amount)}</span>
+                          <button className={`kb-iconbtn confirm ${r.settled ? "on" : ""}`}
+                                  onClick={() => markSettled(r, !r.settled)}
+                                  aria-label={r.settled ? "精算していない状態に戻す" : "精算済みにする"}>
+                            <Check size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
+              )}
+              </>
               )}
             </>
           ) : (

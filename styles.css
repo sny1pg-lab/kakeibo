@@ -266,9 +266,6 @@ select.kb-input { appearance: none; -webkit-appearance: none; cursor: pointer; p
 .kb-pendingchip.empty { border-color: var(--line); background: var(--card); color: var(--sub); }
 .kb-pendingchip.empty b { color: var(--sub); font-weight: 500; }
 /* 未精算の帯。未確定（オレンジ）と見分けがつくよう緑にする */
-.kb-pendingchip.settle { border-color: var(--accent); background: #F0F8F2; color: #2E7D48; }
-.kb-pendingchip.settle.on { border-color: var(--accent); background: #DFF0E5; }
-.kb-pendingchip.settle.empty { border-color: var(--line); background: var(--card); color: var(--sub); }
 
 .kb-iconbtn.confirm { border: 1px solid var(--pending); color: var(--pending); }
 .kb-iconbtn.confirm:active { background: #FDEED8; }
