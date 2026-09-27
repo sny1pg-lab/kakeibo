@@ -236,6 +236,23 @@ const CircleAlert = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><path d=
 // 精算タブ。お金を返すところなので、お札と戻る矢印にしてある
 const HandCoins = (p) => <Svg {...p}><circle cx="8" cy="8" r="5" /><path d="M10.7 16.5a5 5 0 1 0-4.2-8" /><path d="M3 18h12a2 2 0 0 1 0 4H5" /><path d="m7 22-4-4" /></Svg>;
 
+/**
+ * シートの背景を押して閉じるための組み。
+ *
+ * onClick だけで閉じていたころは、欄の中で押し始めて外で離したときにも閉じていた。
+ * クリックは押した場所と離した場所の共通の親で起きるので、
+ * 欄から背景へ指を動かすと背景のクリックになる。
+ * パソコンで店名や内容をドラッグして選ぼうとすると、途中で編集画面が消えていた。
+ * 押し始めも背景だったときだけ閉じる。
+ */
+let backdropDown = false;
+function backdrop(onClose) {
+  return {
+    onPointerDown: (ev) => { backdropDown = ev.target === ev.currentTarget; },
+    onClick: (ev) => { if (backdropDown && ev.target === ev.currentTarget) onClose(); },
+  };
+}
+
 /** 明細の並び順を入れ替えるボタン。 */
 function SortButton({ asc, onToggle }) {
   return (
@@ -654,7 +671,7 @@ function BookSheet({ books, currentId, onPick, onAdd, onRename, onSetUrl, onRemo
   }
 
   return (
-    <div className="kb-sheet-backdrop" onClick={onClose}>
+    <div className="kb-sheet-backdrop" {...backdrop(onClose)}>
       <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
         <div className="kb-sheet-head">
           <span className="kb-sheet-title">家計簿</span>
@@ -3370,7 +3387,7 @@ function KakeiboApp() {
 
         {/* 実績・立替の明細シート */}
         {detail && (
-          <div className="kb-sheet-backdrop" onClick={closeDetail}>
+          <div className="kb-sheet-backdrop" {...backdrop(closeDetail)}>
             <div className="kb-sheet" ref={detailSheetRef} onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">
@@ -3506,7 +3523,7 @@ function KakeiboApp() {
 
         {/* 明細の入力・編集シート */}
         {entryTarget && entryCat && (
-          <div className="kb-sheet-backdrop" onClick={closeEntry}>
+          <div className="kb-sheet-backdrop" {...backdrop(closeEntry)}>
             <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">
@@ -3620,7 +3637,7 @@ function KakeiboApp() {
 
         {/* 立替の入力・編集シート */}
         {tkFormOpen && (
-          <div className="kb-sheet-backdrop" onClick={closeTk}>
+          <div className="kb-sheet-backdrop" {...backdrop(closeTk)}>
             <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">{tkEditId ? "立替を編集" : "立替を記録"}</span>
@@ -3687,7 +3704,7 @@ function KakeiboApp() {
 
         {/* 振替の入力・編集シート */}
         {trFormOpen && (
-          <div className="kb-sheet-backdrop" onClick={() => { setTrFormOpen(false); setTrEditId(null); }}>
+          <div className="kb-sheet-backdrop" {...backdrop(() => { setTrFormOpen(false); setTrEditId(null); })}>
             <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">{trEditId ? "振替を編集" : "振替を記録"}</span>
@@ -3774,7 +3791,7 @@ function KakeiboApp() {
 
         {/* カテゴリ管理シート */}
         {manageOpen && (
-          <div className="kb-sheet-backdrop" onClick={() => { setManageOpen(false); setCatFormOpen(false); }}>
+          <div className="kb-sheet-backdrop" {...backdrop(() => { setManageOpen(false); setCatFormOpen(false); })}>
             <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">カテゴリの編集</span>
@@ -4013,7 +4030,7 @@ function KakeiboApp() {
 
         {/* 予算の入力シート */}
         {bgTarget && (
-          <div className="kb-sheet-backdrop" onClick={() => setBgTarget(null)}>
+          <div className="kb-sheet-backdrop" {...backdrop(() => setBgTarget(null))}>
             <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">
