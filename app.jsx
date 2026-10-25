@@ -233,6 +233,7 @@ const CalendarPlus = (p) => <Svg {...p}><path d="M8 2v4" /><path d="M16 2v4" /><
 const ArrowLeftRight = (p) => <Svg {...p}><path d="m16 3 4 4-4 4" /><path d="M20 7H4" /><path d="m8 21-4-4 4-4" /><path d="M4 17h16" /></Svg>;
 const Target = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></Svg>;
 const CircleAlert = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></Svg>;
+const Copy = (p) => <Svg {...p}><rect width="14" height="14" x="8" y="8" rx="2" /><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" /></Svg>;
 // 精算タブ。お金を返すところなので、お札と戻る矢印にしてある
 const HandCoins = (p) => <Svg {...p}><circle cx="8" cy="8" r="5" /><path d="M10.7 16.5a5 5 0 1 0-4.2-8" /><path d="M3 18h12a2 2 0 0 1 0 4H5" /><path d="m7 22-4-4" /></Svg>;
 
@@ -1817,6 +1818,24 @@ function KakeiboApp() {
     setEnError("");
     setEnConfirmDel(false);
   }
+  /**
+   * いま開いている記録を、同じ内容の新しい記録にする。
+   *
+   * 繰り返し買うものを入れ直すときに、打ち直さなくて済むようにするため。
+   * 日付は今日にし、確定と精算の状態は新規と同じところから始める。
+   * 入れ直すものは別の支払いなので、元の状態を引き継ぐと取り違える。
+   */
+  function duplicateEntry() {
+    if (!entryTarget || !entryTarget.entryId) return;
+    setEntryTarget({ catId: entryTarget.catId, entryId: null });
+    setEnDate(todayInYear());
+    setEnPending(uses.pending);
+    setEnSettled(false);
+    setEnConfirmDel(false);
+    setEnError("");
+    flash("複製しました。直して記録してください");
+  }
+
   function openEntryEdit(cat, entry) {
     if (!cat) return;
     setEntryTarget({ catId: cat.id, entryId: entry.id });
@@ -2114,6 +2133,17 @@ function KakeiboApp() {
     }
     closeTk();
   }
+  /** 立替も同じように複製できる。考え方は duplicateEntry と同じ。 */
+  function duplicateTk() {
+    if (!tkEditId) return;
+    setTkEditId(null);
+    setTkDate(todayInYear());
+    setTkPending(true);
+    setTkConfirmDel(false);
+    setTkError("");
+    flash("複製しました。直して記録してください");
+  }
+
   function deleteSettlement(id) {
     setSettlements((p) => p.filter((s) => s.id !== id));
     KakeiboAPI.remove("settlements", id);
@@ -3610,6 +3640,14 @@ function KakeiboApp() {
                 {entryTarget.entryId ? "保存する" : "記録する"}
               </button>
               )}
+              {entryTarget.entryId && !isLinked({ id: entryTarget.entryId }) && (
+                <div className="kb-btn-row" style={{ marginTop: 9 }}>
+                  <button className="kb-btn ghost" onClick={duplicateEntry}>
+                    <Copy size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+                    この記録を複製
+                  </button>
+                </div>
+              )}
               {entryTarget.entryId && !isLinked({ id: entryTarget.entryId }) ? (
                 <div className="kb-btn-row" style={{ marginTop: 9 }}>
                   {enConfirmDel ? (
@@ -3686,6 +3724,14 @@ function KakeiboApp() {
               </CheckRow>
               {tkError && <div className="kb-err">{tkError}</div>}
               <button className="kb-btn" onClick={submitTk}>{tkEditId ? "保存する" : "記録する"}</button>
+              {tkEditId && (
+                <div className="kb-btn-row" style={{ marginTop: 9 }}>
+                  <button className="kb-btn ghost" onClick={duplicateTk}>
+                    <Copy size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+                    この立替を複製
+                  </button>
+                </div>
+              )}
               {tkEditId && (
                 <div className="kb-btn-row" style={{ marginTop: 9 }}>
                   {tkConfirmDel ? (
