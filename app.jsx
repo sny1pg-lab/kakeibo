@@ -3553,8 +3553,8 @@ function KakeiboApp() {
 
         {/* 明細の入力・編集シート */}
         {entryTarget && entryCat && (
-          <div className="kb-sheet-backdrop" {...backdrop(closeEntry)}>
-            <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
+          <div className="kb-sheet-backdrop">
+            <div className="kb-sheet">
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">
                   {entryTarget.entryId ? "記録を編集" : "記録する"}
@@ -3675,8 +3675,8 @@ function KakeiboApp() {
 
         {/* 立替の入力・編集シート */}
         {tkFormOpen && (
-          <div className="kb-sheet-backdrop" {...backdrop(closeTk)}>
-            <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
+          <div className="kb-sheet-backdrop">
+            <div className="kb-sheet">
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">{tkEditId ? "立替を編集" : "立替を記録"}</span>
                 <button className="kb-close" onClick={closeTk} aria-label="閉じる"><X size={19} /></button>
@@ -3750,8 +3750,8 @@ function KakeiboApp() {
 
         {/* 振替の入力・編集シート */}
         {trFormOpen && (
-          <div className="kb-sheet-backdrop" {...backdrop(() => { setTrFormOpen(false); setTrEditId(null); })}>
-            <div className="kb-sheet" onClick={(ev) => ev.stopPropagation()}>
+          <div className="kb-sheet-backdrop">
+            <div className="kb-sheet">
               <div className="kb-sheet-head">
                 <span className="kb-sheet-title">{trEditId ? "振替を編集" : "振替を記録"}</span>
                 <button className="kb-close" onClick={() => { setTrFormOpen(false); setTrEditId(null); }} aria-label="閉じる"><X size={19} /></button>
