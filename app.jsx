@@ -1092,7 +1092,7 @@ function BudgetTab({ year, plan, cats, groupDefs, named, onEdit }) {
       )}
 
       <div className="kb-note">
-        {year}年の予算です。上の年を切り替えると、その年の予算を別に持てます。
+        {year}年の予算です。変更した項目は翌年以降にも反映されます。前年以前の予算は変わりません。
         オレンジの金額は計算で出たものなので、直接は変えられません。
       </div>
     </>
@@ -1364,11 +1364,13 @@ function KakeiboApp() {
    * 収入から他をすべて引いた額がそこに入る（ゆきの自由費）。
    * 残りのグループが無い家計簿では、引いた額を「余り」として出す。
    *
-   * budgets シートが無い、またはその年の行が1件も無いときは、
+   * その年の行が無いときは、直近の過去年の予算を引き継ぐ。
+   * budgets シートが無い、または過去年にも行が1件も無いときは、
    * カテゴリが持っている従来の予算をそのまま使う。貼り替え前でも画面が壊れないようにするため。
    */
   const budgetPlan = useMemo(() => {
-    const rows = budgets.filter((b) => b.year === year);
+    const sourceYear = Math.max(...budgets.filter((b) => b.year <= year).map((b) => b.year));
+    const rows = budgets.filter((b) => b.year === sourceYear);
     const byTarget = {};
     rows.forEach((b) => { byTarget[b.target] = b; });
     const live = rows.length > 0;
@@ -1460,14 +1462,15 @@ function KakeiboApp() {
     // その年の行がまだ1件も無いときは、いま見えている内容をまとめて書き出す。
     // 1件だけ保存すると、残りが0になったように見えてしまう。
     const extra = [];
-    if (!budgetPlan.live) {
+    if (!budgets.some((b) => b.year === year)) {
       const seed = (target, kind, monthly, annual) => {
         if (target === t.target) return;
         extra.push({
           id: KakeiboAPI.newId("b_"), year, target,
           monthly: kind === "annual" ? 0 : monthly,
           annual: kind === "annual" ? annual : 0,
-          method: "", memo: "",
+          method: target === INCOME_TARGET ? budgetPlan.income.method : (budgetPlan.per[target]?.method || ""),
+          memo: target === INCOME_TARGET ? budgetPlan.income.memo : (budgetPlan.per[target]?.memo || ""),
         });
       };
       seed(INCOME_TARGET, "income", Math.round(budgetPlan.income.monthly), 0);
@@ -1477,11 +1480,18 @@ function KakeiboApp() {
         const k = kindOf(c.group);
         if (k === KIND_MONTH) seed(c.id, "monthly", b.monthly, 0);
         else if (k === KIND_YEAR) seed(c.id, "annual", 0, b.annual);
-        else if (k === KIND_NONE) seed(c.id, "annual", 0, 0);
+        else if (k === KIND_NONE || (k === KIND_REST && (b.method || b.memo))) seed(c.id, "annual", 0, 0);
       });
     }
 
-    const all = [rec, ...extra];
+    // 設定済みの将来の年にも、今回編集した項目だけを反映する。
+    // 行の無い将来の年は、表示時に直近の過去年を引き継ぐ。
+    const futureYears = [...new Set(budgets.filter((b) => b.year > year).map((b) => b.year))];
+    const future = futureYears.map((y) => {
+      const old = budgets.find((b) => b.year === y && b.target === t.target);
+      return { ...rec, year: y, id: old ? old.id : KakeiboAPI.newId("b_") };
+    });
+    const all = [rec, ...extra, ...future];
     setBudgets((prev) => {
       const rest = prev.filter((b) => !all.some((x) => x.year === b.year && x.target === b.target));
       return [...rest, ...all];
@@ -4111,6 +4121,7 @@ function KakeiboApp() {
                 <label className="kb-label">根拠メモ（任意）</label>
                 <input className="kb-input" value={bgMemo} onChange={(ev) => setBgMemo(ev.target.value)} placeholder="5,000x6人+VD" />
               </div>
+              <div className="kb-note">保存すると、変更した項目は{year}年以降に反映されます。</div>
               {bgError && <div className="kb-err">{bgError}</div>}
               <button className="kb-btn" onClick={submitBudget}>保存する</button>
             </div>
